@@ -61,9 +61,11 @@ a_curl = C_curl · g · F(v) · S(ω) · μ̃_slow · c_ice(x) · sign(ω) · n�
        + C_dir  · g · F(v) · (μ̄_L − μ̄_R) · n̂        (Richtungsterm, klein)
          ω < 0 (Uhrzeigersinn) → −n̂ = nach rechts;  ω > 0 → n̂ = nach links
          μ̄_L/μ̄_R: mittlere lokale Reibung linke/rechte Laufringhälfte (höhere Reibung zieht zu sich)
-F(v)     = 1 / (1 + (v / v_c)^q)                   (v_c ≈ 0,6–1,0 m/s, q ≈ 2: schnell = fast gerade, spät stark)
-S(ω)     = tanh(|ω| / ω_lo) · 1 / (1 + (|ω| / ω_hi)²)   (ω_lo ≈ 0,15 rad/s, ω_hi ≈ 4 rad/s)
-μ̃_slow   = mittlere lokale Reibung der Kontaktpunkte auf der langsamen Seite (aus dem Eisfeld)
+F(v)     = v/(v + v_lo) · 1 / (1 + (v / v_c)²)     (v_c = 1,6 m/s: schnell = fast gerade; v_lo = 0,05 m/s: kein Haken auf den letzten cm)
+S(ω)     = grip(ω) / (1 + (ω / ω_hi)²)             (ω_hi = 3 rad/s)
+grip(ω)  = min(1, 1,1 · x / sqrt(1 + x²)),  x = |ω| / ω_lo   (ω_lo = 0,1 rad/s; ab ≈ 0,22 rad/s exakt 1)
+μ̃_slow   = mittlerer Reibungsfaktor der Kontaktpunkte auf der langsamen Seite (aus dem Eisfeld);
+           geht als  max(0, 1 − κ·(1 − μ̃_slow))  ein (κ = 2): gewischtes/abgenutztes Eis curlt weniger
 c_ice(x) = lokaler Curl-Faktor des Eises (Pebble-Zustand, „straight/normal/swingy“)
 ```
 
@@ -72,7 +74,7 @@ Eigenschaften (alle als Tests geprüft):
 - **Später Curl**: F(v) ist bei Abgabegeschwindigkeit (≈ 2 m/s) klein und wächst, wenn der Stein langsam wird → Großteil im letzten Drittel.
 - **Takeouts curlen weniger**: höheres v → kleineres F(v) und kürzere Zeit.
 - **Spin-Unabhängigkeit**: S(ω) ≈ 1 im typischen Bereich (2–4 Umdrehungen ≈ 0,5–1,2 rad/s); sehr viel Drehung → S sinkt (kaum Curl); sehr wenig Drehung → S klein **und** zusätzliche Zufallskomponente:
-  `a_noise = C_noise · g · F(v) · (1 − tanh(|ω|/ω_lo)) · ξ(t)`, ξ = geseedetes, tiefpassgefiltertes Rauschen (Pebble-Zufall) → „unberechenbar“.
+  `a_noise = C_noise · g · F(v) · (1 − grip(ω)) · ξ(t)`, ξ = geseedeter Ornstein-Uhlenbeck-Prozess (τ = 2,5 s, Pebble-Zufall) → „unberechenbar“. Bei normaler Drehung ist grip = 1 und der Zufall verschwindet.
 - **Wischen reduziert Curl**: μ̃_slow sinkt im gewischten Bereich → weniger Curl („hält die Linie“).
 - **Richtungswischen**: Wischen auf einer Seite senkt die Reibung dort → Pivot eher auf der ungewischten Seite → kleine Ablenkung **weg von der gewischten Seite**. C_dir ≪ C_curl (Ziel: max. ≈ 5–10 cm Effekt über die letzten 10 m), entspricht heutigen Besenmaterialien.
 - Begründung der Struktur: Murata zeigt, dass der Curl aus der Links-rechts-Asymmetrie der Drehpunktbildung stammt (langsame Seite), Shegelski/Mancini, dass das Ergebnis im üblichen ω-Bereich kaum von ω abhängt, wohl aber von v. Eine rein mikroskopische Herleitung aus den Punktgeschwindigkeiten liefert zwar die Richtung, skaliert aber linear mit ω – widerspricht der Praxis; deshalb die explizite Sättigung S(ω).
@@ -110,8 +112,8 @@ Raster über das ganze Sheet, Zellgröße **4 cm** (≈ 119 × 1143 Zellen, Floa
 
 - Stein-Stein: Kreis-Kreis mit Radius R = 0,1454 m (Schlagband). Impulsbasiert, sequentielle Impulse für mehrere gleichzeitige Kontakte (Ketten, Freeze, Runback).
 - Normalimpuls mit Restitution **e = 0,85** (Startwert; Literatur/Praxis 0,8–0,9 für Granit-Granit). Volltreffer: Stoßstein behält (1 − e)/2 ≈ 7,5 % der Geschwindigkeit → „bleibt fast stehen“, getroffener Stein erhält (1 + e)/2 ≈ 92,5 %.
-- Tangentialimpuls mit Coulomb-Begrenzung `|J_t| ≤ μ_ss · J_n`, μ_ss ≈ 0,1 (Startwert): Relative Tangentialgeschwindigkeit inkl. Drehung (ωR) → **Übertrag von Drehung** und kleiner **„Throw“** (Abweichung des getroffenen Steins von der Stoßlinie um wenige Grad).
-- Zeitschritt: Basis **240 Hz**; wenn zwei Steine sich näher als 2R + v·dt·2 kommen, **Substeps** (×8) mit Bestimmung des Kontaktzeitpunkts (TOI) → kein Durchtunneln auch bei Peel-Gewicht (≈ 3,5 m/s → 1,5 cm/Tick).
+- Tangentialimpuls mit Coulomb-Begrenzung `|J_t| ≤ μ_ss · J_n`, μ_ss = 0,06 (kalibriert auf Throw ≈ 3° beim halben Treffer): Relative Tangentialgeschwindigkeit inkl. Drehung (ωR) → **Übertrag von Drehung** und kleiner **„Throw“** (Abweichung des getroffenen Steins von der Stoßlinie um wenige Grad).
+- Zeitschritt: Basis **240 Hz**; sobald ein laufender Stein einem anderen näher als 2R + Sicherheitsabstand kommt, rechnet die Welt den Tick in **8 Substeps** (1920 Hz): Eindringtiefe ≤ ~2 mm auch bei Peel-Gewicht, wird positionskorrigiert → kein Durchtunneln. Mehrfachkontakte: sequentielle Impulse (4 Iterationen).
 - Seitenbegrenzung: Kontakt Steinrand mit Side Line → Stein aus dem Spiel (bleibt liegen/wird entfernt, Regelmodul entscheidet).
 - Back Line: vollständig dahinter → aus dem Spiel.
 
@@ -119,7 +121,7 @@ Raster über das ganze Sheet, Zellgröße **4 cm** (≈ 119 × 1143 Zellen, Floa
 
 - Fester Zeitschritt dt = 1/240 s, unabhängig von der Framerate (Akkumulator im Renderer).
 - PRNG: xoshiro128** (32-bit, `Math.imul`), getrennte Streams für Eis-Generierung, Pebble-Rauschen, Ausführungsfehler.
-- **Transzendente Funktionen** (`exp`, `tanh`, `sin`, `pow` …) können zwischen JS-Engines im letzten Bit abweichen. Physik nutzt daher eigene deterministische Implementierungen (`dmath.ts`, Polynome/Tabellen) bzw. `Math.sqrt` (IEEE-exakt). So sind Replays auch zwischen Browsern bitgleich.
+- **Transzendente Funktionen** (`exp`, `tanh`, `sin`, `pow` …) können zwischen JS-Engines im letzten Bit abweichen. Der Physik-Kern verwendet deshalb im Zeitschritt ausschließlich `+ − × ÷` und `Math.sqrt` (IEEE-exakt); wo Sinus/Kosinus/Exponential nötig sind (Laufring-Punkte, Abklingkonstanten), kommen eigene Reihen aus `dmath.ts` zum Einsatz. Gauß-Zufall = Summe von 4 Gleichverteilungen. So sind Replays auch zwischen Browsern bitgleich.
 - Wisch-Eingaben werden pro Tick quantisiert (I in 1/64-Stufen) und mit dem Wurf gespeichert.
 - Test: gleicher Seed + gleiche Eingaben → identische Endpositionen (Bit-Vergleich), auch nach Kollisionsketten.
 
@@ -147,19 +149,37 @@ Raster über das ganze Sheet, Zellgröße **4 cm** (≈ 119 × 1143 Zellen, Floa
 | K16 | Schräger Treffer | Ablenkwinkel ≈ 90° Summe (minus Restitutions-/Reibungseffekte), Throw 0,5–4° | Impulsmodell |
 | K17 | Determinismus | gleicher Seed + Eingabe → bitgleiches Ergebnis | — |
 
-Kalibrierte Parameter (wird in Phase 2/3 ausgefüllt):
+Kalibrierte Parameter (Stand Phase 2; Wisch-Parameter folgen in Phase 3):
 
-| Parameter | Start | kalibriert |
+| Parameter | Wert | Bemerkung |
 |---|---|---|
-| μ₀ (normal) | 0,0075 | – |
-| w | 0,3 | – |
-| C_curl | – | – |
-| v_c, q | 0,8 m/s, 2 | – |
-| ω_lo, ω_hi | 0,15, 4 rad/s | – |
-| e, μ_ss | 0,85, 0,1 | – |
-| k_heat, α_s, h_½, τ_h | – | – |
+| μ₀ keen / normal / heavy | 0,0066 / 0,0075 / 0,0085 | |
+| w (v^-1/2-Anteil), u_ref, u_min | 0,3 · 1 m/s · 0,03 m/s | |
+| C_curl | 0,00126 | × g = max. Querbeschleunigung |
+| Curl-Skala straight / normal / swingy | 0,7 / 1,0 / 1,35 | |
+| v_c, v_lo | 1,6 m/s, 0,05 m/s | |
+| ω_lo, ω_hi | 0,1 rad/s, 3 rad/s | |
+| κ (Reibungs-Sensitivität des Curls) | 2 | Feintuning in Phase 3 |
+| C_dir, C_noise, τ_noise | 0,0012 · 0,002 · 2,5 s | |
+| e, μ_ss | 0,85 · 0,06 | |
+| Abgabe: Release 1,5 m vor Hog, ω₀ | 0,85 rad/s | ≈ 3,2 Umdrehungen beim Draw |
+
+Gemessene Ergebnisse (ideales Eis, `npx vite-node scripts/tune.ts`):
+
+| Eis | v Release (Tee-Draw) | Release → Stillstand | Hog-to-Hog | Curl |
+|---|---|---|---|---|
+| keen | 1,95 m/s | 28,8 s | 15,3 s | 1,43 m |
+| normal | 2,07 m/s | 27,2 s | 14,4 s | 1,22 m |
+| heavy | 2,19 m/s | 25,6 s | 13,6 s | 1,04 m |
+
+- Takeout (Hog-to-Hog 9,5 s, 2,66 m/s): Curl bis zur Tee Line ≈ 0,28 m (23 % des Draws). 75 % des Draw-Curls entstehen im letzten Drittel des Weges.
+- Drehung: 1,6 / 3,2 / 5,4 Umdrehungen → Curl 1,28 / 1,22 / 1,10 m; 13 Umdrehungen → 0,68 m; 23 → 0,45 m (Spinner laufen zudem etwas weiter).
+- Halber Treffer: Zielstein-Throw ≈ 3°; Volltreffer: Stoßstein behält ≈ 7,5 % Geschwindigkeit.
+- Rechenzeit: ≈ 11 ms pro Draw (6 500 Ticks) auf einem Desktop-Kern → Monte-Carlo-KI machbar.
+
+Tests: `tests/physics/calibration.test.ts` (K1–K9), `collision.test.ts` (K15, K16, Ketten, Double, Tunneling, Linien), `determinism.test.ts` (K17), `ice.test.ts` (Feld, Falls, Abnutzung, End-Drift).
 
 ## 10. Parameter anpassen
 
 Alle Werte stehen in `src/physics/config.ts` mit Einheit und Kommentar. Nach Änderungen `npm test` ausführen – die
-Kalibrierungstests (`tests/calibration/*.test.ts`) zeigen, ob K1–K17 noch eingehalten werden.
+Kalibrierungstests (`tests/physics/*.test.ts`) zeigen, ob K1–K17 noch eingehalten werden.

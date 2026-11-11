@@ -57,7 +57,7 @@ Optional danach: Mixed Doubles (vorgesetzte Steine, Power Play), Thinking Time.
 
 ## Fortschritt
 - [x] Phase 1 – Recherche, Doku, Setup, CI
-- [ ] Phase 2
+- [x] Phase 2 – Physik-Kern headless (41 Tests grün; K1–K9, K15–K17)
 - [ ] Phase 3
 - [ ] Phase 4
 - [ ] Phase 5

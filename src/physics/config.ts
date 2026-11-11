@@ -44,8 +44,96 @@ export const GRAVITY = 9.81;
 export const INTEGRATION = {
   /** Base fixed timestep frequency in Hz (≥ 240 Hz required). */
   hz: 240,
-  /** Substeps used when stones are close to contact. */
+  /** Substeps per tick while stones are close to contact. */
   contactSubsteps: 8,
+  /** Stones closer than 2R + this margin (plus travel per tick) trigger substepping [m]. */
+  contactMargin: 0.004,
+} as const;
+
+/** Sliding friction on pebbled ice (docs/PHYSICS.md §3). */
+export const FRICTION = {
+  /** Base friction coefficient per ice speed setting (at u = uRef). */
+  mu0: { keen: 0.0066, normal: 0.0075, heavy: 0.0085 },
+  /** Share of friction that scales with u^-1/2 (0 = constant μ, 1 = pure v^-1/2). */
+  velocityWeight: 0.3,
+  /** Reference sliding speed for the v^-1/2 term [m/s]. */
+  uRef: 1.0,
+  /** Sliding speed below which the v^-1/2 term is capped [m/s]. */
+  uMin: 0.03,
+  /** Number of discrete contact points on the running band. */
+  contactPoints: 24,
+} as const;
+
+/** Curl model (docs/PHYSICS.md §4) – empirically calibrated. */
+export const CURL = {
+  /** Lateral acceleration coefficient (× g) at full curl. */
+  coeff: 0.00126,
+  /** Per-game curl multiplier. */
+  scale: { straight: 0.7, normal: 1.0, swingy: 1.35 },
+  /** Speed above which curl fades out: F(v) = 1 / (1 + (v/vC)^2) [m/s]. */
+  vC: 1.6,
+  /** Fade-in at very low speed to avoid a hook in the last centimetres [m/s]. */
+  vLo: 0.05,
+  /** Spin below which curl becomes weak and erratic [rad/s]. */
+  omegaLo: 0.1,
+  /** Gain so that the rotation grip saturates at 1 (fully predictable) above ≈ 2.2 × omegaLo. */
+  gripGain: 1.1,
+  /** Spin above which curl decreases again [rad/s]. */
+  omegaHi: 3.0,
+  /** How strongly reduced friction on the slow side (sweeping, wear) reduces curl. */
+  frictionSensitivity: 2.0,
+  /** Directional term: lateral accel (× g) per unit left/right friction-factor difference. */
+  dirCoeff: 0.0012,
+  /** Erratic lateral acceleration (× g) for stones with (almost) no rotation. */
+  noiseCoeff: 0.002,
+  /** Correlation time of the erratic term [s]. */
+  noiseTau: 2.5,
+} as const;
+
+/** Ice state field (docs/PHYSICS.md §5). */
+export const ICE = {
+  /** Grid cell size [m]. */
+  cell: 0.04,
+  /** Amplitude of local friction variation (± fraction). */
+  frictionVariation: 0.025,
+  /** Amplitude of local curl variation (± fraction). */
+  curlVariation: 0.04,
+  /** Node spacing of the smooth variation noise [m]. */
+  variationSpacing: 0.6,
+  /** Node spacing of the height field used for falls [m]. */
+  fallSpacing: 1.5,
+  /** Typical slope magnitude of falls [m/m]. */
+  fallSlope: 1.2e-5,
+  /** Pebble wear gained per metre travelled by a contact point passing a cell (saturating). */
+  wearRate: 0.1,
+  /** Friction reduction at full wear (fraction). */
+  wearFriction: 0.05,
+  /** Curl reduction at full wear (fraction). */
+  wearCurl: 0.2,
+  /** Random change of global friction / curl between ends (± fraction). */
+  endDrift: 0.02,
+  /** Max friction reduction from sweeping heat (fraction) – used from phase 3. */
+  heatFriction: 0.25,
+  /** Heat level at which half of the max reduction is reached. */
+  heatHalf: 1.0,
+} as const;
+
+/** Stone–stone collisions (docs/PHYSICS.md §7). */
+export const COLLISION = {
+  /** Coefficient of restitution granite–granite. */
+  restitution: 0.85,
+  /** Coulomb friction between striking bands. */
+  stoneFriction: 0.06,
+  /** Sequential-impulse iterations per substep. */
+  iterations: 4,
+} as const;
+
+/** Delivery defaults (docs/PHYSICS.md §9). */
+export const DELIVERY = {
+  /** Release point distance before the near hog line [m]. */
+  releaseBeforeHog: 1.5,
+  /** Default handle rotation at release [rad/s] (≈ 3 rotations on a draw). */
+  omega: 0.85,
 } as const;
 
 /** Derived geometry helpers. */
@@ -53,4 +141,8 @@ export const DERIVED = {
   hogToHog: SHEET.teeToTee - 2 * SHEET.teeToHog,
   /** Max centre distance from tee for a stone to count as in the house (touching the 12-ft). */
   houseScoringRadius: SHEET.houseRadii[0] + STONE.radius,
+  dt: 1 / INTEGRATION.hz,
 } as const;
+
+export type IceSpeed = keyof typeof FRICTION.mu0;
+export type CurlAmount = keyof typeof CURL.scale;

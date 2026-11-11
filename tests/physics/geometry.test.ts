@@ -1,4 +1,4 @@
-import { DERIVED, SHEET, STONE, INTEGRATION } from '../src/physics/config';
+import { DERIVED, SHEET, STONE, INTEGRATION } from '../../src/physics/config';
 
 describe('sheet geometry (R1)', () => {
   it('hog-to-hog distance is ~21.945 m', () => {
