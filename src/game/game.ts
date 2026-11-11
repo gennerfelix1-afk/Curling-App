@@ -1,14 +1,60 @@
-import { DERIVED, EXECUTION, SHEET, STONE, type Difficulty } from '../physics/config';
+import { DERIVED, EXECUTION, RULES, SHEET, STONE, type Difficulty } from '../physics/config';
 import { deliverStone, releaseY, type Turn } from '../physics/delivery';
 import { Ice, type IceOptions } from '../physics/ice';
 import { Rng } from '../physics/rng';
-import { hackY, HALF_WIDTH, nearHogY, teeY, type Dir } from '../physics/sheet';
-import { createStone, type Stone } from '../physics/stone';
+import { clearedFarHog, hackY, HALF_WIDTH, nearHogY, teeY, type Dir } from '../physics/sheet';
+import { cloneStone, createStone, type Stone } from '../physics/stone';
 import type { SweepCommand } from '../physics/sweep';
 import { World } from '../physics/world';
+import {
+  applySweepRules,
+  fgzRuling,
+  hogLineShort,
+  lsdDistance,
+  protectedStones,
+  reachedTeeLine,
+  releaseViolation,
+  scoreEnd,
+  type EndScore,
+  type ProtectedStone,
+} from '../rules/rules';
+import { Match, POSITIONS } from './match';
 import { buildWeightTable, type Weight } from './weights';
 
-export type Phase = 'aim' | 'meterWeight' | 'meterLine' | 'slide' | 'running' | 'settled' | 'endOver';
+export type Phase =
+  | 'aim'
+  | 'meterWeight'
+  | 'meterLine'
+  | 'slide'
+  | 'running'
+  | 'decision'
+  | 'settled'
+  | 'endScore'
+  | 'gameOver';
+
+export const TEAM_NAMES = ['Rot', 'Gelb'] as const;
+
+/** A choice the non-offending team has to make after a rule violation. */
+export interface Decision {
+  kind: 'noTick' | 'touched';
+  /** Team that decides. */
+  team: number;
+  text: string;
+  options: { id: string; label: string }[];
+}
+
+interface TouchInfo {
+  stoneId: number;
+  offender: number;
+  /** All stones at the moment of the touch. */
+  stones: Stone[];
+}
+
+interface LsdState {
+  /** Recorded distances per team [m]. */
+  dist: [number[], number[]];
+  index: number;
+}
 
 export interface GameOptions {
   seed: number;
@@ -16,7 +62,12 @@ export interface GameOptions {
   difficulty: Difficulty;
   /** Show the estimated unswept path while aiming. */
   preview: boolean;
-  stonesPerEnd: number;
+  /** Scheduled ends (8 or 10); extra ends follow on a tie. */
+  ends: number;
+  /** First-end hammer: coin toss, last stone draw, or a fixed team. */
+  hammer: 'coin' | 'lsd' | 0 | 1;
+  /** Treat brush contact with a moving stone as a touched stone (R9). */
+  touchRule: boolean;
 }
 
 export const DEFAULT_GAME_OPTIONS: GameOptions = {
@@ -24,7 +75,9 @@ export const DEFAULT_GAME_OPTIONS: GameOptions = {
   ice: {},
   difficulty: 'beginner',
   preview: true,
-  stonesPerEnd: 16,
+  ends: 8,
+  hammer: 'coin',
+  touchRule: true,
 };
 
 /** Live sweeping input of one sweeper. */
@@ -74,13 +127,33 @@ export class Game {
   private settleT = 0;
   private acc = 0;
 
+  /** Sweeping input: 0, 1 = sweepers of the delivering team, 2 = skip of the other team. */
   readonly sweepInput: SweepInput[] = [
+    { hold: false, boost: 0 },
     { hold: false, boost: 0 },
     { hold: false, boost: 0 },
   ];
   sweepSide: -1 | 0 | 1 = 0;
   /** Recorded sweeping input of the current shot, one entry per tick. */
   readonly sweepLog: (readonly (SweepCommand | null)[])[] = [];
+
+  readonly match: Match;
+  readonly stonesPerEnd = RULES.stonesPerTeam * 2;
+  /** Last stone draw in progress (before the first end). */
+  lsd: LsdState | null = null;
+  /** Result of the end that was just completed (phase 'endScore'). */
+  endResult: EndScore | null = null;
+  /** Pending choice of the non-offending team (phase 'decision'). */
+  decision: Decision | null = null;
+  /** Latest ruling / info text for the players, with its age in seconds. */
+  message = '';
+  messageAge = 0;
+
+  private beforeShot: Stone[] = [];
+  private protectedNow: ProtectedStone[] = [];
+  private touch: TouchInfo | null = null;
+  private eventCursor = 0;
+  private afterDecision: ((choice: string) => void) | null = null;
 
   private previewDirty = true;
   private previewPath: number[] = [];
@@ -95,11 +168,43 @@ export class Game {
     this.weights = buildWeightTable(this.ice, this.dir);
     this.weightIndex = this.weights.findIndex((w) => w.id === 'tee');
     this.aimY = teeY(this.dir);
+    const h = this.options.hammer;
+    let hammer: number;
+    if (h === 'lsd') {
+      hammer = 0;
+      this.lsd = { dist: [[], []], index: 0 };
+      this.turn = 'cw';
+      this.say('Last Stone Draw: je zwei Steine auf den Button – die kleinere Summe bekommt den Hammer.');
+    } else if (h === 'coin') {
+      hammer = this.rng.nextU32() & 1;
+      this.say(`Münzwurf: ${TEAM_NAMES[hammer]} hat den Hammer.`);
+    } else {
+      hammer = h;
+    }
+    this.match = new Match(this.options.ends, hammer);
+  }
+
+  private say(text: string): void {
+    this.message = text;
+    this.messageAge = 0;
   }
 
   /** Team that throws the current stone. */
   get team(): number {
-    return this.shot % 2;
+    if (this.lsd) return this.lsd.index % 2;
+    return this.match.teamForShot(Math.min(this.shot, this.stonesPerEnd - 1));
+  }
+
+  /** Position of the player who throws the current stone. */
+  get thrower(): string {
+    return this.lsd ? 'LSD' : POSITIONS[Math.min(3, this.shot >> 2)];
+  }
+
+  /** Stones each team still has to play in this end. */
+  stonesLeft(team: number): number {
+    if (this.lsd) return 0;
+    const thrown = this.match.firstTeam === team ? (this.shot + 1) >> 1 : this.shot >> 1;
+    return RULES.stonesPerTeam - thrown;
   }
 
   get weight(): Weight {
@@ -120,7 +225,7 @@ export class Game {
   }
 
   setTurn(turn: Turn): void {
-    if (this.phase !== 'aim') return;
+    if (this.phase !== 'aim' || this.lsd) return; // LSD: one clockwise, one counter-clockwise
     this.turn = turn;
     this.previewDirty = true;
   }
@@ -152,8 +257,8 @@ export class Game {
         this.lineDev = this.meter;
         this.beginSlide();
         return true;
-      case 'endOver':
-        this.nextEnd();
+      case 'endScore':
+        this.finishEnd();
         return true;
       default:
         return false;
@@ -163,6 +268,24 @@ export class Game {
   /** Back to aiming before the stone leaves the hack. */
   cancel(): void {
     if (this.phase === 'meterWeight' || this.phase === 'meterLine') this.phase = 'aim';
+  }
+
+  /** Resolve a pending decision of the non-offending team. */
+  decide(choice: string): void {
+    if (this.phase !== 'decision' || !this.decision) return;
+    if (!this.decision.options.some((o) => o.id === choice)) return;
+    const next = this.afterDecision;
+    this.decision = null;
+    this.afterDecision = null;
+    if (next) next(choice);
+  }
+
+  /** The given team concedes the match. */
+  concede(team: number): void {
+    if (this.phase === 'gameOver' || this.lsd) return;
+    this.match.concede(team);
+    this.phase = 'gameOver';
+    this.say(`${TEAM_NAMES[team]} gibt auf – ${TEAM_NAMES[1 - team]} gewinnt.`);
   }
 
   /** Sweeper starts pressing (each press also counts as a stroke for the tapping rhythm). */
@@ -192,6 +315,7 @@ export class Game {
 
   /** Advance the game by real time; physics runs in fixed ticks. */
   update(seconds: number): void {
+    this.messageAge += seconds;
     this.acc += Math.min(seconds, 0.25);
     while (this.acc >= DT) {
       this.acc -= DT;
@@ -235,10 +359,21 @@ export class Game {
   private beginSlide(): void {
     this.phase = 'slide';
     this.slideT = 0;
-    const s = createStone(this.shot, this.team, 0, hackY(this.dir) + this.dir * 0.4);
+    // state before the delivery: needed to replace stones after a violation
+    this.beforeShot = this.world.stones.filter((q) => q.inPlay).map(cloneStone);
+    this.protectedNow = this.lsd ? [] : protectedStones(this.world.stones, this.team, this.dir, this.shot + 1);
+    this.touch = null;
+    this.eventCursor = this.world.events.length;
+    const s = createStone(this.stoneId(), this.team, 0, hackY(this.dir) + this.dir * 0.4);
     this.world.addStone(s);
     this.current = s;
     this.sweepLog.length = 0;
+  }
+
+  /** Id of the stone being delivered: team × 8 + number of the team's stone. */
+  private stoneId(): number {
+    const n = this.lsd ? this.lsd.index >> 1 : this.shot >> 1;
+    return this.team * RULES.stonesPerTeam + n;
   }
 
   private tickSlide(): void {
@@ -259,7 +394,7 @@ export class Game {
       const angle = s.angle;
       // replace the sliding dummy by the released stone
       this.world.stones.pop();
-      const released = deliverStone(this.world, this.shot, this.team, {
+      const released = deliverStone(this.world, this.stoneId(), this.team, {
         dir: this.dir,
         releaseX: rp.x,
         aimX,
@@ -270,28 +405,193 @@ export class Game {
       released.angle = angle;
       this.current = released;
       this.phase = 'running';
+      if (releaseViolation(rp.y, this.dir)) {
+        // R5: not released before the hog line at the delivery end
+        released.inPlay = false;
+        released.moving = false;
+        this.say('Hog-Line-Verletzung bei der Abgabe – Stein aus dem Spiel.');
+      }
     }
   }
 
   private tickRunning(): void {
     const s = this.current!;
     for (const inp of this.sweepInput) inp.boost = Math.max(0, inp.boost - BOOST_DECAY * DT);
-    let cmds: (SweepCommand | null)[] | undefined;
-    const i0 = this.sweepIntensity(0);
-    const i1 = this.sweepIntensity(1);
-    if ((i0 > 0 || i1 > 0) && s.inPlay && s.moving) {
-      cmds = [
-        i0 > 0 ? { stoneId: s.id, intensity: i0, side: this.sweepSide } : null,
-        i1 > 0 ? { stoneId: s.id, intensity: i1, side: this.sweepSide } : null,
-      ];
+    const raw: (SweepCommand | null)[] = [null, null, null];
+    let any = false;
+    if (s.inPlay && s.moving) {
+      for (let k = 0; k < 2; k++) {
+        const i = this.sweepIntensity(k);
+        if (i > 0) {
+          raw[k] = { stoneId: s.id, intensity: i, side: this.sweepSide };
+          any = true;
+        }
+      }
     }
+    // the other team's skip may sweep any stone that has reached the tee line
+    const i2 = this.lsd ? 0 : this.sweepIntensity(2);
+    if (i2 > 0) {
+      const target = this.skipTarget();
+      if (target) {
+        raw[2] = { stoneId: target.id, intensity: i2, side: 0 };
+        any = true;
+      }
+    }
+    const cmds = any ? applySweepRules(raw, this.world.stones, this.dir, this.team) : undefined;
     this.sweepLog.push(cmds ?? []);
     this.world.step(cmds);
+    this.scanEvents();
     if (this.world.isAtRest()) {
-      this.phase = 'settled';
-      this.settleT = 0;
       for (const inp of this.sweepInput) inp.boost = 0;
+      this.onRest();
     }
+  }
+
+  /** Stone the non-delivering skip would sweep: a moving stone behind the tee line (theirs first). */
+  private skipTarget(): Stone | null {
+    let best: Stone | null = null;
+    for (const q of this.world.stones) {
+      if (!q.inPlay || !q.moving || !reachedTeeLine(q, this.dir)) continue;
+      if (!best || (q.team === this.team && best.team !== this.team)) best = q;
+    }
+    return best;
+  }
+
+  /** Effective sweepers after applying the sweeping rules (for the display). */
+  sweeperActive(k: number): boolean {
+    return this.world.sweepers.state[k].down;
+  }
+
+  /** The other team's skip may sweep right now. */
+  get skipMaySweep(): boolean {
+    return this.phase === 'running' && !this.lsd && this.skipTarget() !== null;
+  }
+
+  /** React to physics events of this tick (brush contact with a moving stone, R9). */
+  private scanEvents(): void {
+    const ev = this.world.events;
+    for (; this.eventCursor < ev.length; this.eventCursor++) {
+      const e = ev[this.eventCursor];
+      if (e.type !== 'touched' || !this.options.touchRule || this.touch || this.lsd) continue;
+      const stone = this.world.getStone(e.id);
+      if (!stone) continue;
+      const offender = e.sweeper < 2 ? this.team : 1 - this.team;
+      if (offender !== this.team) {
+        // touched by the non-delivering team: stones are placed where they would have come to
+        // rest – the simulation simply continues unaffected
+        this.say(`${TEAM_NAMES[offender]} berührt einen laufenden Stein – Steine bleiben, wie sie ohne Berührung liegen.`);
+        continue;
+      }
+      if (!clearedFarHog(stone.y, this.dir)) {
+        // before the hog line at the playing end: removed immediately
+        stone.inPlay = false;
+        stone.moving = false;
+        stone.vx = stone.vy = stone.omega = 0;
+        this.say('Berührter Stein vor der Hog Line – aus dem Spiel.');
+        continue;
+      }
+      this.touch = { stoneId: stone.id, offender, stones: this.world.stones.map(cloneStone) };
+    }
+  }
+
+  /** All stones have come to rest: apply the rules for this delivery. */
+  private onRest(): void {
+    if (this.lsd) {
+      this.settle();
+      return;
+    }
+    const t = this.touch;
+    if (t) {
+      this.ask(
+        {
+          kind: 'touched',
+          team: 1 - t.offender,
+          text: `${TEAM_NAMES[t.offender]} hat einen laufenden Stein mit dem Besen berührt.`,
+          options: [
+            { id: 'remove', label: 'Berührten Stein entfernen, verschobene Steine zurücksetzen' },
+            { id: 'leave', label: 'Alle Steine liegen lassen' },
+          ],
+        },
+        (choice) => {
+          if (choice === 'remove') this.removeTouched(t);
+          this.applyDeliveryRules();
+        },
+      );
+      return;
+    }
+    this.applyDeliveryRules();
+  }
+
+  private ask(decision: Decision, then: (choice: string) => void): void {
+    this.decision = decision;
+    this.afterDecision = then;
+    this.phase = 'decision';
+  }
+
+  /** R9 option: remove the touched stone and replace stones displaced after the infraction. */
+  private removeTouched(t: TouchInfo): void {
+    for (const before of t.stones) {
+      const s = this.world.getStone(before.id);
+      if (!s) continue;
+      if (before.id === t.stoneId) {
+        s.inPlay = false;
+      } else if (!before.moving && before.inPlay) {
+        s.x = before.x;
+        s.y = before.y;
+        s.angle = before.angle;
+        s.inPlay = true;
+      }
+      s.moving = false;
+      s.vx = s.vy = s.omega = 0;
+    }
+    this.say('Berührter Stein entfernt, verschobene Steine zurückgesetzt.');
+  }
+
+  /** Hog line, free guard zone and no-tick rule for the delivery that just ended. */
+  private applyDeliveryRules(): void {
+    const s = this.current!;
+    if (s.inPlay && hogLineShort(s, this.dir)) {
+      s.inPlay = false;
+      this.say('Hog Line nicht überquert – Stein aus dem Spiel.');
+    }
+    const ruling = fgzRuling(this.protectedNow, this.world.stones);
+    if (ruling === 'fgz') {
+      this.replaceStones();
+      this.say('Free-Guard-Zone-Verstoß: abgegebener Stein entfernt, Steine zurückgesetzt.');
+    } else if (ruling === 'noTick') {
+      this.ask(
+        {
+          kind: 'noTick',
+          team: 1 - this.team,
+          text: `No-Tick-Verstoß: ${TEAM_NAMES[this.team]} hat einen Guard von der Centre Line geschoben.`,
+          options: [
+            { id: 'replace', label: 'Abgegebenen Stein entfernen, Steine zurücksetzen' },
+            { id: 'leave', label: 'Alle Steine liegen lassen' },
+          ],
+        },
+        (choice) => {
+          if (choice === 'replace') {
+            this.replaceStones();
+            this.say('No-Tick-Verstoß: abgegebener Stein entfernt, Steine zurückgesetzt.');
+          }
+          this.settle();
+        },
+      );
+      return;
+    }
+    this.settle();
+  }
+
+  /** Put all stones back to where they were before the delivery; the delivered stone is removed. */
+  private replaceStones(): void {
+    this.world.stones.length = 0;
+    for (const q of this.beforeShot) this.world.stones.push(cloneStone(q));
+    this.current = null;
+  }
+
+  private settle(): void {
+    this.phase = 'settled';
+    this.settleT = 0;
   }
 
   private nextStone(): void {
@@ -300,18 +600,72 @@ export class Game {
       if (!this.world.stones[i].inPlay) this.world.stones.splice(i, 1);
     }
     this.world.events.length = 0;
+    this.eventCursor = 0;
     this.world.sweepers.recover(30);
+    this.previewDirty = true;
+    if (this.lsd) {
+      this.nextLsd();
+      return;
+    }
     this.current = null;
     this.shot++;
-    this.previewDirty = true;
-    this.phase = this.shot >= this.options.stonesPerEnd ? 'endOver' : 'aim';
+    if (this.shot >= this.stonesPerEnd) {
+      this.endResult = scoreEnd(this.world.stones, this.dir);
+      this.phase = 'endScore';
+      const r = this.endResult;
+      this.say(r.team < 0 ? 'Blank End – der Hammer bleibt.' : `${TEAM_NAMES[r.team]} schreibt ${r.points}.`);
+    } else {
+      this.phase = 'aim';
+    }
+  }
+
+  /** Last stone draw: measure the stone, take it off, next draw or decide the hammer. */
+  private nextLsd(): void {
+    const lsd = this.lsd!;
+    const s = this.current;
+    const team = lsd.index % 2;
+    const d = s ? lsdDistance(s, this.dir) : RULES.lsdMiss;
+    lsd.dist[team].push(d);
+    this.world.stones.length = 0;
+    this.current = null;
+    lsd.index++;
+    if (lsd.index < 4) {
+      this.turn = lsd.index < 2 ? 'cw' : 'ccw';
+      this.say(`LSD ${TEAM_NAMES[team]}: ${(d * 100).toFixed(1)} cm`);
+      this.phase = 'aim';
+      return;
+    }
+    const sum = (t: number): number => lsd.dist[t][0] + lsd.dist[t][1];
+    const a = sum(0);
+    const b = sum(1);
+    const hammer = a === b ? this.rng.nextU32() & 1 : a < b ? 0 : 1;
+    this.match.hammer = hammer;
+    this.lsd = null;
+    this.turn = 'cw';
+    this.say(`LSD: Rot ${(a * 100).toFixed(1)} cm · Gelb ${(b * 100).toFixed(1)} cm – ${TEAM_NAMES[hammer]} hat den Hammer.`);
+    this.phase = 'aim';
+  }
+
+  /** Record the score of the completed end and start the next one (or finish the match). */
+  private finishEnd(): void {
+    const r = this.endResult!;
+    this.match.recordEnd(r.team, r.points);
+    this.endResult = null;
+    if (this.match.over) {
+      this.phase = 'gameOver';
+      const w = this.match.winner;
+      this.say(`${TEAM_NAMES[w]} gewinnt ${this.match.total(w)}:${this.match.total(1 - w)}.`);
+      return;
+    }
+    if (this.match.isExtraEnd) this.say('Gleichstand – Extra End.');
+    this.nextEnd();
   }
 
   /** Clear the sheet and play the next end in the other direction. */
-  nextEnd(): void {
+  private nextEnd(): void {
     this.world.stones.length = 0;
     this.world.events.length = 0;
-    this.end++;
+    this.end = this.match.end;
     this.shot = 0;
     this.dir = (this.dir === 1 ? -1 : 1) as Dir;
     this.world.dir = this.dir;
@@ -335,8 +689,9 @@ export class Game {
   /** Skip call matching the current sweeping. */
   get call(): string {
     if (this.phase !== 'running' || !this.current?.moving) return '';
-    const i = Math.max(this.sweepIntensity(0), this.sweepIntensity(1));
-    const both = this.sweepIntensity(0) > 0 && this.sweepIntensity(1) > 0;
+    const st = this.world.sweepers.state;
+    const i = Math.max(st[0].down ? this.sweepIntensity(0) : 0, st[1].down ? this.sweepIntensity(1) : 0);
+    const both = st[0].down && st[1].down;
     if (i >= 0.85 && both) return 'HARD!';
     if (i >= 0.85) return 'Hard!';
     if (i > 0) return both ? 'Sweep!' : 'Clean';

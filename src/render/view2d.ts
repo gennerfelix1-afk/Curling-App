@@ -19,7 +19,7 @@ export class View2D {
   private dir: Dir = 1;
   private first = true;
   /** Screen area not covered by the HUD / control panels. */
-  private top = 44;
+  private top = 96;
   private bottom = 150;
   private cx = 0;
 
@@ -113,6 +113,7 @@ export class View2D {
     this.drawPreview(game);
     this.drawBroom(game);
     for (const s of game.world.stones) if (s.inPlay) this.drawStone(s);
+    this.drawMeasure(game);
     this.drawSweepers(game);
     this.drawMinimap(game);
   }
@@ -205,7 +206,7 @@ export class View2D {
   }
 
   private drawBroom(game: Game): void {
-    if (game.phase === 'endOver') return;
+    if (game.phase === 'endScore' || game.phase === 'gameOver') return;
     const ctx = this.ctx;
     const x = this.sx(game.aimX);
     const y = this.sy(game.aimY);
@@ -254,6 +255,45 @@ export class View2D {
     ctx.lineCap = 'butt';
   }
 
+  /** End result: mark the counting stones; show the measuring device for close decisions. */
+  private drawMeasure(game: Game): void {
+    const r = game.endResult;
+    if (!r || game.phase !== 'endScore') return;
+    const ctx = this.ctx;
+    const tx = this.sx(0);
+    const ty = this.sy(teeY(game.dir));
+    const find = (id: number): Stone | undefined => game.world.stones.find((q) => q.id === id);
+    for (let i = 0; i < r.points; i++) {
+      const s = find(r.ranking[i].id);
+      if (!s) continue;
+      ctx.beginPath();
+      ctx.arc(this.sx(s.x), this.sy(s.y), STONE.radius * this.scale * 1.25, 0, Math.PI * 2);
+      ctx.strokeStyle = '#0a7d3b';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+    ctx.font = '600 13px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    for (const m of r.measured) {
+      const s = find(m.id);
+      if (!s) continue;
+      const x = this.sx(s.x);
+      const y = this.sy(s.y);
+      ctx.strokeStyle = '#111';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      const label = `${(m.dist * 100).toFixed(1)} cm`;
+      const w = ctx.measureText(label).width + 10;
+      ctx.fillStyle = 'rgba(11, 29, 42, 0.9)';
+      ctx.fillRect(x - w / 2, y - STONE.radius * this.scale - 24, w, 19);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(label, x, y - STONE.radius * this.scale - 10);
+    }
+  }
+
   private drawSweepers(game: Game): void {
     if (game.phase !== 'running') return;
     const s = game.current;
@@ -263,15 +303,16 @@ export class View2D {
     if (speed < 0.01) return;
     const ang = Math.atan2(-this.dir * s.vy, this.dir * s.vx); // screen angle of travel
     game.world.sweepers.state.forEach((sw, k) => {
+      if (k > 1 && !sw.down) return; // the other skip only appears while sweeping
       const active = game.sweepIntensity(k) > 0;
-      const x = active && sw.down ? sw.x : s.x + (s.vx / speed) * (0.4 + k * 0.15) + (k ? 0.35 : -0.35) * (-s.vy / speed);
-      const y = active && sw.down ? sw.y : s.y + (s.vy / speed) * (0.4 + k * 0.15) + (k ? 0.35 : -0.35) * (s.vx / speed);
+      const x = sw.down ? sw.x : s.x + (s.vx / speed) * (0.4 + k * 0.15) + (k ? 0.35 : -0.35) * (-s.vy / speed);
+      const y = sw.down ? sw.y : s.y + (s.vy / speed) * (0.4 + k * 0.15) + (k ? 0.35 : -0.35) * (s.vx / speed);
       // brush strokes wiggle sideways with the intensity
       const wig = active ? Math.sin(performance.now() / (60 - 25 * sw.effective) + k) * 0.05 * this.scale : 0;
       ctx.save();
       ctx.translate(this.sx(x), this.sy(y));
       ctx.rotate(ang);
-      ctx.fillStyle = active ? '#12354d' : 'rgba(18, 53, 77, 0.35)';
+      ctx.fillStyle = sw.down ? (k > 1 ? '#7a1f6b' : '#12354d') : 'rgba(18, 53, 77, 0.35)';
       ctx.fillRect((-SWEEP.brushDepth / 2) * this.scale, (-SWEEP.brushWidth / 2) * this.scale + wig, SWEEP.brushDepth * this.scale, SWEEP.brushWidth * this.scale);
       ctx.restore();
     });

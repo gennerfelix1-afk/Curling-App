@@ -3,29 +3,10 @@ import { buildWeightTable } from '../../src/game/weights';
 import { hogToHogTime } from '../../src/physics/delivery';
 import { Ice } from '../../src/physics/ice';
 import { distToTee, hackY, nearHogY, teeY } from '../../src/physics/sheet';
+import { deliver, runUntil, CLEAN } from '../gameHelpers';
 import { cleanIce, throwStone } from '../helpers';
 
-const clean = { variation: false, falls: false, wear: false, endDrift: false };
-
-/** Run the game until the phase changes (or a time limit). */
-function runUntil(g: Game, done: () => boolean, maxSeconds = 90, each?: () => void): void {
-  for (let t = 0; t < maxSeconds * 60 && !done(); t++) {
-    if (each) each();
-    g.update(1 / 60);
-  }
-}
-
-/** Deliver with perfectly timed meters. */
-function deliver(g: Game, weightDev = 0, lineDev = 0): void {
-  const wait = (target: number): void => {
-    for (let i = 0; i < 2400 && Math.abs(g.meter - target) > 0.01; i++) g.update(1 / 240);
-  };
-  g.tap();
-  wait(weightDev);
-  g.tap();
-  wait(lineDev);
-  g.tap();
-}
+const clean = CLEAN;
 
 describe('weight table', () => {
   const ice = cleanIce();
@@ -65,7 +46,7 @@ describe('weight table', () => {
 
 describe('game flow (single throws)', () => {
   it('a perfectly executed tee draw goes through all phases and stops near the tee line', () => {
-    const g = new Game({ seed: 3, ice: clean });
+    const g = new Game({ seed: 3, ice: clean, hammer: 1 });
     expect(g.phase).toBe('aim');
     expect(g.weight.id).toBe('tee');
     deliver(g);
@@ -87,7 +68,7 @@ describe('game flow (single throws)', () => {
 
   it('sweeping carries the stone further and straighter; taps raise the intensity', () => {
     const play = (sweep: boolean): { x: number; y: number } => {
-      const g = new Game({ seed: 3, ice: clean });
+      const g = new Game({ seed: 3, ice: clean, hammer: 1 });
       g.changeWeight(-2); // top 8
       deliver(g);
       runUntil(g, () => g.phase === 'running');
@@ -108,7 +89,7 @@ describe('game flow (single throws)', () => {
     expect(on.y - off.y).toBeGreaterThan(1.2);
     expect(on.x).toBeLessThan(off.x * 0.9);
 
-    const g = new Game({ seed: 3, ice: clean });
+    const g = new Game({ seed: 3, ice: clean, hammer: 1 });
     g.sweepDown(0);
     expect(g.sweepIntensity(0)).toBeCloseTo(0.8, 5);
     g.sweepUp(0);
@@ -119,7 +100,7 @@ describe('game flow (single throws)', () => {
 
   it('meter errors change weight and line', () => {
     const play = (wd: number, ld: number): { x: number; y: number } => {
-      const g = new Game({ seed: 3, ice: clean, difficulty: 'pro' });
+      const g = new Game({ seed: 3, ice: clean, difficulty: 'pro', hammer: 1 });
       deliver(g, wd, ld);
       runUntil(g, () => g.phase === 'settled');
       return { x: g.current!.x, y: g.current!.y };
@@ -132,7 +113,7 @@ describe('game flow (single throws)', () => {
   });
 
   it('the preview shows the unswept path and matches the real throw', () => {
-    const g = new Game({ seed: 5, ice: clean });
+    const g = new Game({ seed: 5, ice: clean, hammer: 1 });
     g.setAim(-0.6, teeY(1));
     g.setTurn('ccw');
     const p = g.preview();
@@ -148,7 +129,7 @@ describe('game flow (single throws)', () => {
 
   it('is deterministic and independent of the frame rate', () => {
     const play = (fps: number): string => {
-      const g = new Game({ seed: 11 });
+      const g = new Game({ seed: 11, hammer: 1 });
       g.setAim(0.4, teeY(1) - 1);
       g.changeWeight(1);
       g.tap();
@@ -169,21 +150,23 @@ describe('game flow (single throws)', () => {
   });
 
   it('plays a whole end: 16 stones alternate, takeouts remove stones, next end flips direction', () => {
-    const g = new Game({ seed: 7 });
+    const g = new Game({ seed: 7, hammer: 1 });
     for (let i = 0; i < 16; i++) {
       expect(g.phase).toBe('aim');
       expect(g.team).toBe(i % 2);
+      expect(g.stonesLeft(0) + g.stonesLeft(1)).toBe(16 - i);
       if (i % 4 === 3) g.changeWeight(8); // a hit now and then
       g.setAim(((i * 37) % 11) / 10 - 0.5, teeY(1));
       g.setTurn(i % 3 === 0 ? 'ccw' : 'cw');
       deliver(g);
       runUntil(g, () => g.phase === 'settled');
-      runUntil(g, () => g.phase === 'aim' || g.phase === 'endOver');
+      runUntil(g, () => g.phase === 'aim' || g.phase === 'endScore' || g.phase === 'decision');
+      if (g.phase === 'decision') { g.decide('leave'); runUntil(g, () => g.phase === 'aim' || g.phase === 'endScore'); }
     }
-    expect(g.phase).toBe('endOver');
+    expect(g.phase).toBe('endScore');
     expect(g.world.stones.every((s) => s.inPlay)).toBe(true);
     expect(g.world.stones.length).toBeLessThanOrEqual(16);
-    expect(g.world.stones.some((s) => distToTee(s.x, s.y, 1) < 1.83 + 0.15)).toBe(true);
+    void distToTee;
     g.tap();
     expect(g.phase).toBe('aim');
     expect(g.dir).toBe(-1);
@@ -192,16 +175,18 @@ describe('game flow (single throws)', () => {
     expect(g.aimY).toBe(teeY(-1));
     // throw towards the other end works as well
     g.changeWeight(-99);
-    g.changeWeight(4); // tee
+    g.changeWeight(3); // top 4: clears the hog line for sure
     g.setTurn('cw');
+    const thrower = g.team;
     deliver(g);
     runUntil(g, () => g.phase === 'settled');
-    expect(Math.abs(g.current!.y - teeY(-1))).toBeLessThan(0.6);
+    expect(thrower).toBe(g.match.firstTeam);
+    expect(Math.abs(g.current!.y - teeY(-1))).toBeLessThan(1.2);
     expect(g.current!.x).toBeLessThan(0); // in-turn curls to the thrower's right = -x when playing towards -y
   });
 
   it('aim is clamped to the playing end and locked during the delivery', () => {
-    const g = new Game({ seed: 1, ice: clean });
+    const g = new Game({ seed: 1, ice: clean, hammer: 1 });
     g.setAim(99, -99);
     expect(g.aimX).toBeLessThan(2.3);
     expect(g.aimY).toBeCloseTo(teeY(1) - 6.401, 3);

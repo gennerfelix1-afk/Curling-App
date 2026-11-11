@@ -1,28 +1,32 @@
-import type { Game } from '../game/game';
+import { RULES, SWEEP } from '../physics/config';
+import { TEAM_NAMES, type Game } from '../game/game';
 import type { View2D } from '../render/view2d';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
 /**
- * Mouse / keyboard / touch input and the HTML overlay (phase 4).
+ * Mouse / keyboard / touch input and the HTML overlay.
  *
  * Desktop: click or drag on the ice = broom · Q/E or ←/→ = turn · W/S or ↑/↓ = weight ·
  * Space/Enter = deliver & lock meters · A / D = sweeper 1 / 2 (hold = sweep, tap fast = harder) ·
- * 1/2/3 = sweep left / full path / right · Esc = cancel.
+ * L = skip of the other team (behind the tee line) · 1/2/3 = sweep left / full path / right ·
+ * Esc = cancel.
  * Touch: the same via the on-screen buttons; the two big sweep pads work with two thumbs.
  */
 export class Controls {
   private aimPointer = -1;
+  private boardKey = '';
+  private decisionKey = '';
 
-  constructor(private game: Game, view: View2D, canvas: HTMLCanvasElement) {
+  constructor(public game: Game, view: View2D, canvas: HTMLCanvasElement) {
     // aiming on the ice
     const aim = (e: PointerEvent): void => {
       const r = canvas.getBoundingClientRect();
       const p = view.toSheet(e.clientX - r.left, e.clientY - r.top);
-      game.setAim(p.x, p.y);
+      this.game.setAim(p.x, p.y);
     };
     canvas.addEventListener('pointerdown', (e) => {
-      if (game.phase !== 'aim') return;
+      if (this.game.phase !== 'aim') return;
       this.aimPointer = e.pointerId;
       aim(e);
       try {
@@ -41,22 +45,33 @@ export class Controls {
     canvas.addEventListener('pointercancel', end);
 
     // buttons
-    this.press('btn-turn-cw', () => game.setTurn('cw'));
-    this.press('btn-turn-ccw', () => game.setTurn('ccw'));
-    this.press('btn-weight-down', () => game.changeWeight(-1));
-    this.press('btn-weight-up', () => game.changeWeight(1));
-    this.press('btn-go', () => game.tap());
-    this.press('btn-cancel', () => game.cancel());
-    this.press('meter', () => game.tap());
-    this.press('btn-side-l', () => game.setSweepSide(-1));
-    this.press('btn-side-c', () => game.setSweepSide(0));
-    this.press('btn-side-r', () => game.setSweepSide(1));
+    this.press('btn-turn-cw', () => this.game.setTurn('cw'));
+    this.press('btn-turn-ccw', () => this.game.setTurn('ccw'));
+    this.press('btn-weight-down', () => this.game.changeWeight(-1));
+    this.press('btn-weight-up', () => this.game.changeWeight(1));
+    this.press('btn-go', () => this.game.tap());
+    this.press('btn-continue', () => this.game.tap());
+    this.press('btn-cancel', () => this.game.cancel());
+    this.press('meter', () => this.game.tap());
+    this.press('btn-side-l', () => this.game.setSweepSide(-1));
+    this.press('btn-side-c', () => this.game.setSweepSide(0));
+    this.press('btn-side-r', () => this.game.setSweepSide(1));
     this.hold('pad-sweep-0', 0);
     this.hold('pad-sweep-1', 1);
+    this.hold('pad-skip', 2);
+    $('btn-concede').addEventListener('click', () => {
+      const g = this.game;
+      if (confirm(`${TEAM_NAMES[g.team]} gibt die Partie auf?`)) g.concede(g.team);
+    });
+    $('decision-options').addEventListener('click', (e) => {
+      const id = (e.target as HTMLElement).dataset.choice;
+      if (id) this.game.decide(id);
+    });
 
     // keyboard
     window.addEventListener('keydown', (e) => {
-      if (e.repeat) return;
+      if (e.repeat || document.body.dataset.menu === 'open') return;
+      const game = this.game;
       switch (e.code) {
         case 'KeyQ':
         case 'ArrowLeft':
@@ -87,6 +102,9 @@ export class Controls {
         case 'KeyD':
           game.sweepDown(1);
           break;
+        case 'KeyL':
+          game.sweepDown(2);
+          break;
         case 'Digit1':
           game.setSweepSide(-1);
           break;
@@ -102,12 +120,12 @@ export class Controls {
       e.preventDefault();
     });
     window.addEventListener('keyup', (e) => {
-      if (e.code === 'KeyA') game.sweepUp(0);
-      if (e.code === 'KeyD') game.sweepUp(1);
+      if (e.code === 'KeyA') this.game.sweepUp(0);
+      if (e.code === 'KeyD') this.game.sweepUp(1);
+      if (e.code === 'KeyL') this.game.sweepUp(2);
     });
     window.addEventListener('blur', () => {
-      game.sweepUp(0);
-      game.sweepUp(1);
+      for (let k = 0; k < 3; k++) this.game.sweepUp(k);
     });
   }
 
@@ -134,26 +152,88 @@ export class Controls {
     el.addEventListener('pointercancel', up);
   }
 
+  /** Curling-style line score: one column per end, hammer marker, totals. */
+  private renderScoreboard(): void {
+    const g = this.game;
+    const m = g.match;
+    const cols = Math.max(m.ends, m.scores[0].length + (m.over ? 0 : 1));
+    const key = `${m.scores[0].join()}|${m.scores[1].join()}|${m.hammer}|${m.end}|${m.over}|${g.shot}|${g.lsd ? g.lsd.index : -1}`;
+    if (key === this.boardKey) return;
+    this.boardKey = key;
+    let html = '<tr><th></th>';
+    for (let e = 1; e <= cols; e++) {
+      const cur = !m.over && !g.lsd && e === m.end;
+      html += `<th class="${cur ? 'cur' : ''}">${e > m.ends ? 'E' : e}</th>`;
+    }
+    html += '<th class="tot">Σ</th><th class="left">Steine</th></tr>';
+    for (let t = 0; t < 2; t++) {
+      const hammer = !m.over && !g.lsd && m.hammer === t;
+      html += `<tr><td class="team t${t}">${TEAM_NAMES[t]}${hammer ? ' <span class="hammer" title="Hammer (letzter Stein)">🔨</span>' : ''}</td>`;
+      for (let e = 0; e < cols; e++) {
+        const v = m.scores[t][e];
+        html += `<td>${v === undefined ? '' : v}</td>`;
+      }
+      const left = g.stonesLeft(t);
+      html += `<td class="tot">${m.total(t)}</td><td class="left">${'●'.repeat(left)}<span class="used">${'●'.repeat(RULES.stonesPerTeam - left)}</span></td></tr>`;
+    }
+    $('scoreboard').innerHTML = html;
+  }
+
   /** Sync the overlay with the game state (called every frame). */
   refresh(): void {
     const g = this.game;
     const phase = g.phase;
     document.body.dataset.phase = phase;
-    $('hud-end').textContent = `End ${g.end} · Stein ${Math.min(g.shot + 1, g.options.stonesPerEnd)}/${g.options.stonesPerEnd}`;
+    this.renderScoreboard();
+
     const team = $('hud-team');
-    team.textContent = g.team === 0 ? 'Rot' : 'Gelb';
+    team.textContent = TEAM_NAMES[g.team];
     team.dataset.team = String(g.team);
+    let info: string;
+    if (g.lsd) info = `Last Stone Draw ${g.lsd.index + 1}/4`;
+    else if (phase === 'gameOver') info = 'Partie beendet';
+    else {
+      const endName = g.match.isExtraEnd ? 'Extra End' : `End ${g.match.end}/${g.match.ends}`;
+      info = `${endName} · ${g.thrower} · Stein ${Math.min(g.shot + 1, g.stonesPerEnd)}/${g.stonesPerEnd}`;
+      if (g.shot < RULES.fgzUntilStone - 1 && phase !== 'endScore') info += ' · FGZ aktiv';
+    }
+    $('hud-end').textContent = info;
+    team.style.visibility = phase === 'gameOver' || phase === 'endScore' ? 'hidden' : 'visible';
+
     $('weight-label').textContent = g.weight.label;
     $('btn-turn-cw').classList.toggle('on', g.turn === 'cw');
     $('btn-turn-ccw').classList.toggle('on', g.turn === 'ccw');
     $('btn-side-l').classList.toggle('on', g.sweepSide === -1);
     $('btn-side-c').classList.toggle('on', g.sweepSide === 0);
     $('btn-side-r').classList.toggle('on', g.sweepSide === 1);
-    $('btn-go').textContent = phase === 'endOver' ? 'Nächstes End' : 'Abgabe';
+    $('btn-concede').style.display = g.lsd ? 'none' : '';
+
+    // message / ruling
+    const msg = $('message');
+    const show = g.message !== '' && (g.messageAge < 6 || phase === 'endScore' || phase === 'gameOver');
+    msg.textContent = show ? g.message : '';
+    msg.style.display = show ? '' : 'none';
+
+    // end result / game over
+    if (phase === 'endScore' || phase === 'gameOver') {
+      $('btn-continue').textContent = phase === 'gameOver' ? 'Neue Partie' : 'Weiter';
+    }
+
+    // decision of the non-offending team
+    const d = g.decision;
+    const dKey = d ? d.kind + d.team + d.text : '';
+    if (dKey !== this.decisionKey) {
+      this.decisionKey = dKey;
+      if (d) {
+        $('decision-text').textContent = `${d.text} ${TEAM_NAMES[d.team]} entscheidet:`;
+        $('decision-options').innerHTML = d.options
+          .map((o) => `<button data-choice="${o.id}">${o.label}</button>`)
+          .join('');
+      }
+    }
 
     // meter
-    const meter = phase === 'meterWeight' || phase === 'meterLine';
-    if (meter) {
+    if (phase === 'meterWeight' || phase === 'meterLine') {
       $('meter-title').textContent = phase === 'meterWeight' ? 'Gewicht – tippen in der Mitte!' : 'Linie – tippen in der Mitte!';
       $('meter-marker').style.left = `${50 + g.meter * 50}%`;
     }
@@ -166,13 +246,19 @@ export class Controls {
         const pad = $(`pad-sweep-${k}`);
         const i = g.sweepIntensity(k);
         pad.style.setProperty('--level', String(i));
-        pad.classList.toggle('on', i > 0);
+        pad.classList.toggle('on', i > 0 && g.sweeperActive(k));
+        pad.classList.toggle('blocked', i > 0 && !g.sweeperActive(k));
         const fatigue = g.world.sweepers.state[k].fatigue;
-        $(`fatigue-${k}`).style.width = `${Math.round((1 - fatigue / 0.4) * 100)}%`;
+        $(`fatigue-${k}`).style.width = `${Math.round((1 - fatigue / SWEEP.fatigueMax) * 100)}%`;
       }
+      const skip = $('pad-skip');
+      skip.style.display = g.skipMaySweep ? '' : 'none';
+      skip.textContent = `Skip ${TEAM_NAMES[1 - g.team]} wischt (L)`;
+      skip.classList.toggle('on', g.sweeperActive(2));
     } else {
       $('hud-speed').textContent = '';
-      $('hud-call').textContent = phase === 'settled' ? '' : '';
+      $('hud-call').textContent = '';
+      $('pad-skip').style.display = 'none';
     }
   }
 }

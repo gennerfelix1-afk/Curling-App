@@ -55,6 +55,7 @@ export class Sweepers {
       const sw = this.state[k];
       const cmd = cmds ? cmds[k] : null;
       const intensity = cmd ? quantizeIntensity(cmd.intensity) : 0;
+      const wasDown = sw.down;
       sw.down = false;
       sw.effective = 0;
       const stone = cmd && intensity > 0 ? world.getStone(cmd.stoneId) : undefined;
@@ -95,7 +96,8 @@ export class Sweepers {
       sw.x = tx;
       sw.y = ty;
 
-      // contact with other stones: lift before a resting stone, a moving one is "touched"
+      // contact with other stones: lift before a resting stone; a moving stone running into a
+      // brush that is on the ice is "touched"
       let blocked = false;
       for (let i = 0; i < world.stones.length; i++) {
         const o = world.stones[i];
@@ -105,7 +107,8 @@ export class Sweepers {
         const reach = R + SWEEP.touchRadius;
         if (dx * dx + dy * dy < reach * reach) {
           blocked = true;
-          if (o.moving) this.touch(world, o, k);
+          // a brush that was already lifted (e.g. before a resting stone) touches nothing
+          if (o.moving && wasDown) this.touch(world, o, k);
         }
       }
       if (blocked) continue;

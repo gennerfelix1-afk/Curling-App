@@ -59,7 +59,7 @@ function invert(samples: Sample[], f: (s: Sample) => number, target: number): nu
  */
 export function buildWeightTable(ice: Ice, dir: Dir): Weight[] {
   const samples: Sample[] = [];
-  for (let v = 1.5; v <= 4.2001; v += 0.1) samples.push(sample(ice, dir, v));
+  for (let v = 1.5; v <= 4.2001; v += 0.15) samples.push(sample(ice, dir, v));
   const toTee = (teeY(dir) - releaseY(dir)) * dir;
   return WEIGHTS.map((w) => ({
     id: w.id,

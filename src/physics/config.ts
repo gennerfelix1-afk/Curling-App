@@ -130,8 +130,8 @@ export const ICE = {
 
 /** Sweeping (docs/PHYSICS.md §6). */
 export const SWEEP = {
-  /** Number of sweepers of the delivering team. */
-  sweepers: 2,
+  /** Sweepers: 0 and 1 = delivering team, 2 = skip of the non-delivering team (behind the tee line). */
+  sweepers: 3,
   /** Swept patch per brush: depth along the path × width across it [m]. */
   brushDepth: 0.1,
   brushWidth: 0.16,
@@ -207,6 +207,19 @@ export const EXECUTION = {
 } as const;
 
 export type Difficulty = keyof typeof EXECUTION.weightError;
+
+/** Rule parameters (docs/RULES.md). */
+export const RULES = {
+  stonesPerTeam: 8,
+  /** Free guard zone protection lasts until this stone of the end is delivered (five-rock rule). */
+  fgzUntilStone: 6,
+  /** Half width of the centre line [m] (for the no-tick rule). */
+  centreLineHalfWidth: 0.0065,
+  /** Decisions closer than this are shown with the measuring device [m]. */
+  measureThreshold: 0.03,
+  /** Last stone draw: distance recorded for a stone that is not in the house [m]. */
+  lsdMiss: 1.996,
+} as const;
 
 /** Derived geometry helpers. */
 export const DERIVED = {
