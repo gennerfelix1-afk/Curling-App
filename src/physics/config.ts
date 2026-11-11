@@ -173,6 +173,41 @@ export const DELIVERY = {
   omega: 0.85,
 } as const;
 
+/**
+ * Weights in curling language. Draw weights are defined by where an unswept stone thrown down
+ * the centre line stops (metres past the tee line, negative = short of it); hit weights by their
+ * hog-to-hog time on the current ice (seconds).
+ */
+export const WEIGHTS = [
+  { id: 'guard', label: 'Guard', kind: 'draw', value: -3.2 },
+  { id: 'top12', label: 'Top 12', kind: 'draw', value: -1.6 },
+  { id: 'top8', label: 'Top 8', kind: 'draw', value: -1.0 },
+  { id: 'top4', label: 'Top 4', kind: 'draw', value: -0.45 },
+  { id: 'tee', label: 'Tee / Button', kind: 'draw', value: 0 },
+  { id: 'back4', label: 'Back 4', kind: 'draw', value: 0.45 },
+  { id: 'back8', label: 'Back 8', kind: 'draw', value: 1.0 },
+  { id: 'back12', label: 'Back 12', kind: 'draw', value: 1.6 },
+  { id: 'hack', label: 'Hack', kind: 'draw', value: 3.658 },
+  { id: 'board', label: 'Board', kind: 'draw', value: 5.4 },
+  { id: 'control', label: 'Control', kind: 'hit', value: 10.8 },
+  { id: 'normal', label: 'Normal', kind: 'hit', value: 9.6 },
+  { id: 'peel', label: 'Peel', kind: 'hit', value: 8.4 },
+] as const;
+
+/** Player execution: timing meters at delivery (docs/PLAN.md phase 4). */
+export const EXECUTION = {
+  /** Period of the timing meter [s]. */
+  meterPeriod: 1.3,
+  /** Relative speed error at full meter deviation, per difficulty. */
+  weightError: { beginner: 0.02, club: 0.035, pro: 0.05 },
+  /** Lateral aim error at the broom at full meter deviation [m], per difficulty. */
+  lineError: { beginner: 0.2, club: 0.35, pro: 0.5 },
+  /** Duration of the slide from the hack to the release point [s]. */
+  slideTime: 2.2,
+} as const;
+
+export type Difficulty = keyof typeof EXECUTION.weightError;
+
 /** Derived geometry helpers. */
 export const DERIVED = {
   hogToHog: SHEET.teeToTee - 2 * SHEET.teeToHog,

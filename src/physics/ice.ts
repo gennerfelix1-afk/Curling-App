@@ -242,6 +242,11 @@ export class Ice {
     this.refreshCell(k);
   }
 
+  /** Indices of the cells currently carrying sweeping heat (for rendering sweep marks). */
+  get hotCells(): readonly number[] {
+    return this.hot;
+  }
+
   /** Number of cells currently carrying sweeping heat. */
   get hotCount(): number {
     return this.hot.length;

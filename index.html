@@ -2,16 +2,50 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#0b1d2a" />
     <title>Curling</title>
-    <style>
-      html, body { margin: 0; height: 100%; background: #0b1d2a; color: #e8f1f8; font-family: system-ui, sans-serif; }
-      #app { position: fixed; inset: 0; touch-action: none; }
-    </style>
   </head>
-  <body>
-    <div id="app"></div>
+  <body data-phase="aim">
+    <canvas id="view"></canvas>
+
+    <div id="hud">
+      <span id="hud-team" data-team="0">Rot</span>
+      <span id="hud-end"></span>
+      <span id="hud-speed"></span>
+    </div>
+    <div id="hud-call"></div>
+
+    <div class="panel" id="panel-aim">
+      <div class="group aim-only">
+        <button id="btn-turn-ccw" title="Out-Turn (Q)">↺ Out-Turn</button>
+        <button id="btn-turn-cw" title="In-Turn (E)">In-Turn ↻</button>
+      </div>
+      <div class="group aim-only">
+        <button id="btn-weight-down" title="leichter (S)">−</button>
+        <span id="weight-label"></span>
+        <button id="btn-weight-up" title="schwerer (W)">+</button>
+      </div>
+      <button id="btn-go">Abgabe</button>
+      <div class="hint aim-only">Besen setzen: aufs Eis tippen/ziehen · gestrichelt = geschätzter Weg ohne Wischen</div>
+    </div>
+
+    <div class="panel" id="panel-meter">
+      <div id="meter-title"></div>
+      <div id="meter"><div id="meter-marker"></div></div>
+      <button id="btn-cancel">Abbrechen</button>
+    </div>
+
+    <div class="panel" id="panel-sweep">
+      <button class="pad" id="pad-sweep-0"><span>Wischer 1 (A)</span><div class="fatigue"><i id="fatigue-0"></i></div></button>
+      <div id="sides">
+        <button id="btn-side-l">◀ links</button>
+        <button id="btn-side-c">mittig</button>
+        <button id="btn-side-r">rechts ▶</button>
+      </div>
+      <button class="pad" id="pad-sweep-1"><span>Wischer 2 (D)</span><div class="fatigue"><i id="fatigue-1"></i></div></button>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

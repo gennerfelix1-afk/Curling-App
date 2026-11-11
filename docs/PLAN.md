@@ -59,7 +59,7 @@ Optional danach: Mixed Doubles (vorgesetzte Steine, Power Play), Thinking Time.
 - [x] Phase 1 – Recherche, Doku, Setup, CI
 - [x] Phase 2 – Physik-Kern headless (41 Tests grün; K1–K9, K15–K17)
 - [x] Phase 3 – Wischen in der Physik (55 Tests grün; K10–K14)
-- [ ] Phase 4
+- [x] Phase 4 – Minimal spielbar: 2D-Draufsicht, Abgabe mit Timing-Anzeigen, Wischen per Tasten/Touch (67 Tests grün)
 - [ ] Phase 5
 - [ ] Phase 6
 - [ ] Phase 7
