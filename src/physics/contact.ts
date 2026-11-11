@@ -52,6 +52,7 @@ export function stoneAccel(s: Stone, ice: Ice, out: Accel): void {
   let torque = 0;
   let slowSum = 0;
   let slowCount = 0;
+  let fastSum = 0;
   let leftSum = 0;
   let rightSum = 0;
   for (let i = 0; i < N; i++) {
@@ -64,9 +65,13 @@ export function stoneAccel(s: Stone, ice: Ice, out: Accel): void {
     const side = rx * nx + ry * ny;
     if (side > 0) leftSum += m;
     else rightSum += m;
+    // curl grip of the ice under the running band, slow side weighted slightly higher
+    const c = ice.sampleCurl(s.x + rx, s.y + ry);
     if (side * sgn > 0) {
-      slowSum += m;
+      slowSum += c;
       slowCount++;
+    } else {
+      fastSum += c;
     }
     if (u < 1e-9) continue;
     const gv = 1 - vw + vw * Math.sqrt(FRICTION.uRef / (u > FRICTION.uMin ? u : FRICTION.uMin));
@@ -89,13 +94,14 @@ export function stoneAccel(s: Stone, ice: Ice, out: Accel): void {
     const grip = gripOf(xw); // 0 = no rotation, 1 = normal rotation
     const hi = w / CURL.omegaHi;
     const S = grip / (1 + hi * hi);
-    const mSlow = slowCount > 0 ? slowSum / slowCount : 1;
-    let mod = 1 - CURL.frictionSensitivity * (1 - mSlow);
-    if (mod < 0) mod = 0;
+    const cSlow =
+      slowCount > 0 && slowCount < N
+        ? CURL.slowSideWeight * (slowSum / slowCount) + (1 - CURL.slowSideWeight) * (fastSum / (N - slowCount))
+        : (slowSum + fastSum) / N;
     lat =
       GRAVITY *
       F *
-      (CURL.coeff * ice.curlScale * S * mod * ice.sampleCurl(s.x, s.y) * sgn +
+      (CURL.coeff * ice.curlScale * S * cSlow * sgn +
         (CURL.dirCoeff * (leftSum - rightSum) * 2) / N +
         CURL.noiseCoeff * (1 - grip) * s.xi);
   }

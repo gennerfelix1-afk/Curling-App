@@ -5,17 +5,20 @@ import { Ice } from './ice';
 import { Rng } from './rng';
 import { beyondBackLine, touchesSide, type Dir } from './sheet';
 import { cloneStone, type Stone } from './stone';
+import { Sweepers, type SweepCommand, type SweeperState } from './sweep';
 
 export type PhysEvent =
   | { type: 'collision'; tick: number; a: number; b: number; impulse: number; x: number; y: number }
   | { type: 'out'; tick: number; id: number; reason: 'side' | 'back' }
-  | { type: 'stop'; tick: number; id: number };
+  | { type: 'stop'; tick: number; id: number }
+  | { type: 'touched'; tick: number; id: number; sweeper: number };
 
 export interface WorldSnapshot {
   tick: number;
   dir: Dir;
   stones: Stone[];
   rng: [number, number, number, number];
+  sweepers: SweeperState[];
 }
 
 const R = STONE.radius;
@@ -35,7 +38,9 @@ export class World {
   tick = 0;
   /** Direction of play (+1 = towards +y). */
   dir: Dir = 1;
-  /** Whether stones wear the pebble (disable for what-if simulations on a shared ice). */
+  /** Sweepers of the delivering team. */
+  readonly sweepers = new Sweepers();
+  /** Whether this world may modify the ice: wear, sweeping, cooling (disable on a shared ice). */
   mutateIce = true;
   /** Remove stones that touch the side lines or fully cross the back line. */
   boundaries = true;
@@ -62,9 +67,13 @@ export class World {
     return true;
   }
 
-  /** Advance the simulation by one fixed tick (1/240 s). */
-  step(): void {
+  /** Advance the simulation by one fixed tick (1/240 s), optionally with sweeping input. */
+  step(sweep?: readonly (SweepCommand | null)[]): void {
     const stones = this.stones;
+    if (this.mutateIce) {
+      this.sweepers.apply(this, sweep);
+      if (this.tick % ICE.coolStride === 0 && this.ice.hotCount > 0) this.ice.cool();
+    }
     const n = this.needsSubsteps() ? INTEGRATION.contactSubsteps : 1;
     const h = DT / n;
     hits.length = 0;
@@ -102,10 +111,14 @@ export class World {
   }
 
   /** Step until everything rests (or maxTicks elapsed). Returns the number of ticks run. */
-  runUntilRest(maxTicks = 240 * 90, onTick?: (w: World) => void): number {
+  runUntilRest(
+    maxTicks = 240 * 90,
+    onTick?: (w: World) => void,
+    sweep?: (w: World) => readonly (SweepCommand | null)[] | undefined,
+  ): number {
     let k = 0;
     while (k < maxTicks && !this.isAtRest()) {
-      this.step();
+      this.step(sweep ? sweep(this) : undefined);
       k++;
       if (onTick) onTick(this);
     }
@@ -173,7 +186,7 @@ export class World {
   }
 
   snapshot(): WorldSnapshot {
-    return { tick: this.tick, dir: this.dir, stones: this.stones.map(cloneStone), rng: this.rng.getState() };
+    return { tick: this.tick, dir: this.dir, stones: this.stones.map(cloneStone), rng: this.rng.getState(), sweepers: this.sweepers.getState() };
   }
 
   restore(snap: WorldSnapshot): void {
@@ -182,6 +195,7 @@ export class World {
     this.stones.length = 0;
     for (const s of snap.stones) this.stones.push(cloneStone(s));
     this.rng.setState(snap.rng);
+    this.sweepers.setState(snap.sweepers);
     this.events.length = 0;
   }
 }

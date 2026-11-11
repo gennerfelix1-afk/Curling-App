@@ -3,7 +3,7 @@
 Realistisches Curling-Spiel für den Browser (Desktop + Mobile). TypeScript, Vite, Three.js; deterministische
 Physik mit festem Zeitschritt (240 Hz), headless getestet mit Vitest.
 
-**Status:** Phase 2 (Physik-Kern, headless getestet) abgeschlossen – siehe [`docs/PLAN.md`](docs/PLAN.md).
+**Status:** Phase 3 (Physik-Kern inkl. Wischen, headless getestet) abgeschlossen – siehe [`docs/PLAN.md`](docs/PLAN.md).
 
 ## Dokumentation
 - [`docs/PLAN.md`](docs/PLAN.md) – Architektur und Phasenplan

@@ -1,5 +1,10 @@
 import { CURL, FRICTION, ICE, SHEET, type CurlAmount, type IceSpeed } from './config';
+import { DERIVED } from './config';
+import { dexp } from './dmath';
 import { Rng } from './rng';
+
+/** Heat decay factor per cooling step (deterministic exp). */
+const COOL_FACTOR = dexp((-ICE.coolStride * DERIVED.dt) / ICE.heatTau);
 
 export interface IceOptions {
   seed: number;
@@ -76,6 +81,10 @@ export class Ice {
   readonly mu: Float32Array;
   readonly curl: Float32Array;
 
+  /** Cells that currently carry sweeping heat. */
+  private hot: number[] = [];
+  private readonly hotFlag: Uint8Array;
+
   /** Falls: lateral acceleration direction (-∇h) on a coarse node grid. */
   readonly fnx: number;
   readonly fny: number;
@@ -99,6 +108,8 @@ export class Ice {
       this.heat = copyFrom.heat.slice();
       this.mu = copyFrom.mu.slice();
       this.curl = copyFrom.curl.slice();
+      this.hot = copyFrom.hot.slice();
+      this.hotFlag = copyFrom.hotFlag.slice();
       return;
     }
     const o = this.options;
@@ -111,6 +122,7 @@ export class Ice {
     this.heat = new Float32Array(n);
     this.mu = new Float32Array(n);
     this.curl = new Float32Array(n);
+    this.hotFlag = new Uint8Array(n);
     this.fallX = new Float32Array(this.fnx * this.fny);
     this.fallY = new Float32Array(this.fnx * this.fny);
 
@@ -147,9 +159,9 @@ export class Ice {
   refreshCell(i: number): void {
     const wear = this.wear[i];
     const h = this.heat[i];
-    this.mu[i] =
-      this.base[i] * (1 - ICE.wearFriction * wear) * (1 - (ICE.heatFriction * h) / (h + ICE.heatHalf));
-    this.curl[i] = this.curlBase[i] * (1 - ICE.wearCurl * wear);
+    const warm = h / (h + ICE.heatHalf);
+    this.mu[i] = this.base[i] * (1 - ICE.wearFriction * wear) * (1 - ICE.heatFriction * warm);
+    this.curl[i] = this.curlBase[i] * (1 - ICE.wearCurl * wear) * (1 - (ICE.heatCurl * h) / (h + ICE.heatCurlHalf));
   }
 
   private bilinear(layer: Float32Array, x: number, y: number): number {
@@ -218,6 +230,40 @@ export class Ice {
     if (k < 0) return;
     this.wear[k] += amount * (1 - this.wear[k]);
     this.refreshCell(k);
+  }
+
+  /** Add sweeping heat to a cell (by index). */
+  addHeat(k: number, amount: number): void {
+    this.heat[k] += amount;
+    if (!this.hotFlag[k]) {
+      this.hotFlag[k] = 1;
+      this.hot.push(k);
+    }
+    this.refreshCell(k);
+  }
+
+  /** Number of cells currently carrying sweeping heat. */
+  get hotCount(): number {
+    return this.hot.length;
+  }
+
+  /** One cooling step: swept ice returns to its normal state (call every ICE.coolStride ticks). */
+  cool(): void {
+    const hot = this.hot;
+    let n = 0;
+    for (let i = 0; i < hot.length; i++) {
+      const k = hot[i];
+      const h = this.heat[k] * COOL_FACTOR;
+      if (h < ICE.heatEpsilon) {
+        this.heat[k] = 0;
+        this.hotFlag[k] = 0;
+      } else {
+        this.heat[k] = h;
+        hot[n++] = k;
+      }
+      this.refreshCell(k);
+    }
+    hot.length = n;
   }
 
   /** Apply the slight change of the ice between ends (deterministic via rng). */

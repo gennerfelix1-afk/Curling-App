@@ -80,10 +80,10 @@ export const CURL = {
   gripGain: 1.1,
   /** Spin above which curl decreases again [rad/s]. */
   omegaHi: 3.0,
-  /** How strongly reduced friction on the slow side (sweeping, wear) reduces curl. */
-  frictionSensitivity: 2.0,
+  /** Weight of the slow side of the running band in the curl grip (0.5 = both sides equal). */
+  slowSideWeight: 0.52,
   /** Directional term: lateral accel (× g) per unit left/right friction-factor difference. */
-  dirCoeff: 0.0012,
+  dirCoeff: 0.0005,
   /** Erratic lateral acceleration (× g) for stones with (almost) no rotation. */
   noiseCoeff: 0.002,
   /** Correlation time of the erratic term [s]. */
@@ -112,10 +112,47 @@ export const ICE = {
   wearCurl: 0.2,
   /** Random change of global friction / curl between ends (± fraction). */
   endDrift: 0.02,
-  /** Max friction reduction from sweeping heat (fraction) – used from phase 3. */
+  /** Max friction reduction from sweeping heat (fraction, saturating). */
   heatFriction: 0.25,
   /** Heat level at which half of the max reduction is reached. */
   heatHalf: 1.0,
+  /** Max curl reduction from sweeping heat on the slow side (fraction, saturating). */
+  heatCurl: 0.7,
+  /** Heat level at which half of the max curl reduction is reached (curl responds earlier than friction). */
+  heatCurlHalf: 0.3,
+  /** Decay time of sweeping heat (ice cools down again) [s]. */
+  heatTau: 1.5,
+  /** Heat below this level is cleared. */
+  heatEpsilon: 0.01,
+  /** Hot cells are cooled every this many ticks. */
+  coolStride: 12,
+} as const;
+
+/** Sweeping (docs/PHYSICS.md §6). */
+export const SWEEP = {
+  /** Number of sweepers of the delivering team. */
+  sweepers: 2,
+  /** Swept patch per brush: depth along the path × width across it [m]. */
+  brushDepth: 0.1,
+  brushWidth: 0.16,
+  /** Gap between the stone's leading edge and the brush patch, per sweeper [m]. */
+  gap: [0.05, 0.17] as const,
+  /** Lateral offset of the patch when sweeping on one side of the path [m]. */
+  sideOffset: 0.045,
+  /** Heat added per second under the brush at full intensity. */
+  heatRate: 4.5,
+  /** Fatigue gained per second at full intensity (scales with intensity²). */
+  fatigueRate: 0.012,
+  /** Fatigue recovered per second while resting. */
+  recoveryRate: 0.04,
+  /** Maximum loss of effectiveness through fatigue (fraction). */
+  fatigueMax: 0.4,
+  /** Intensity quantisation steps (inputs are recorded per tick for replays). */
+  intensitySteps: 64,
+  /** Radius of the brush head for stone contact detection [m]. */
+  touchRadius: 0.08,
+  /** Speed at which a sweeper moves over to another stone [m/s]. */
+  moveSpeed: 4.0,
 } as const;
 
 /** Stone–stone collisions (docs/PHYSICS.md §7). */

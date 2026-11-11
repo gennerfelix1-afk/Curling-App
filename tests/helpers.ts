@@ -3,6 +3,7 @@ import { deliverStone, releaseY, solveSpeedForDistance, type Turn } from '../src
 import { Ice, type IceOptions } from '../src/physics/ice';
 import { farHogY, nearHogY, teeY } from '../src/physics/sheet';
 import { createStone, type Stone } from '../src/physics/stone';
+import type { SweepCommand } from '../src/physics/sweep';
 import { World } from '../src/physics/world';
 
 /** Ideal ice without random variation, falls or wear – for symmetric calibration tests. */
@@ -18,7 +19,15 @@ export interface Throw {
   seed?: number;
   /** Keep stones that leave the sheet (to measure free travel). */
   noBoundaries?: boolean;
+  /** Sweeping input per tick (the throw then runs on a private copy of the ice). */
+  sweep?: (stone: Stone, world: World) => readonly (SweepCommand | null)[] | undefined;
 }
+
+/** Both sweepers at the given intensity in front of the thrown stone (id 100). */
+export const bothSweep = (intensity: number, side: -1 | 0 | 1 = 0): SweepCommand[] => [
+  { stoneId: 100, intensity, side },
+  { stoneId: 100, intensity, side },
+];
 
 export interface ThrowResult {
   stone: Stone;
@@ -38,8 +47,8 @@ export interface ThrowResult {
 
 /** Throw a single stone down the centre line on the given ice and record key figures. */
 export function throwStone(ice: Ice, t: Throw, setup?: (w: World) => void): ThrowResult {
-  const world = new World(ice, t.seed ?? 1);
-  world.mutateIce = false;
+  const world = new World(t.sweep ? ice.clone() : ice, t.seed ?? 1);
+  world.mutateIce = !!t.sweep;
   if (t.noBoundaries) world.boundaries = false;
   if (setup) setup(world);
   const stone = deliverStone(world, 100, 0, {
@@ -58,7 +67,7 @@ export function throwStone(ice: Ice, t: Throw, setup?: (w: World) => void): Thro
   const xs: number[] = [];
   const ys: number[] = [];
   while (!world.isAtRest() && world.tick < 240 * 120) {
-    world.step();
+    world.step(t.sweep ? t.sweep(stone, world) : undefined);
     if (tNear < 0 && stone.y >= nearHogY(1)) tNear = world.tick / 240;
     if (tFar < 0 && stone.y >= farHogY(1)) tFar = world.tick / 240;
     if (Number.isNaN(xAtTee) && stone.y >= teeY(1)) xAtTee = stone.x;

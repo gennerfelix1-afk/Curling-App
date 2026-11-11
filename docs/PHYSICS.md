@@ -57,15 +57,15 @@ fᵢ = − μᵢ · Nᵢ · ûᵢ
 Senkrechte Einheitsrichtung n̂ = ẑ × v̂ (links der Laufrichtung). Laterale Beschleunigung:
 
 ```
-a_curl = C_curl · g · F(v) · S(ω) · μ̃_slow · c_ice(x) · sign(ω) · n̂
+a_curl = C_curl · g · F(v) · S(ω) · c_ice · sign(ω) · n̂
        + C_dir  · g · F(v) · (μ̄_L − μ̄_R) · n̂        (Richtungsterm, klein)
          ω < 0 (Uhrzeigersinn) → −n̂ = nach rechts;  ω > 0 → n̂ = nach links
          μ̄_L/μ̄_R: mittlere lokale Reibung linke/rechte Laufringhälfte (höhere Reibung zieht zu sich)
 F(v)     = v/(v + v_lo) · 1 / (1 + (v / v_c)²)     (v_c = 1,6 m/s: schnell = fast gerade; v_lo = 0,05 m/s: kein Haken auf den letzten cm)
 S(ω)     = grip(ω) / (1 + (ω / ω_hi)²)             (ω_hi = 3 rad/s)
 grip(ω)  = min(1, 1,1 · x / sqrt(1 + x²)),  x = |ω| / ω_lo   (ω_lo = 0,1 rad/s; ab ≈ 0,22 rad/s exakt 1)
-μ̃_slow   = mittlerer Reibungsfaktor der Kontaktpunkte auf der langsamen Seite (aus dem Eisfeld);
-           geht als  max(0, 1 − κ·(1 − μ̃_slow))  ein (κ = 2): gewischtes/abgenutztes Eis curlt weniger
+c_ice    = Curl-Faktor des Eises unter dem Laufring (Mittel über die Kontaktpunkte, langsame Seite
+           mit Gewicht 0,52): enthält Pebble-Variation, Abnutzung und Wischwärme (Abschnitt 6)
 c_ice(x) = lokaler Curl-Faktor des Eises (Pebble-Zustand, „straight/normal/swingy“)
 ```
 
@@ -75,7 +75,7 @@ Eigenschaften (alle als Tests geprüft):
 - **Takeouts curlen weniger**: höheres v → kleineres F(v) und kürzere Zeit.
 - **Spin-Unabhängigkeit**: S(ω) ≈ 1 im typischen Bereich (2–4 Umdrehungen ≈ 0,5–1,2 rad/s); sehr viel Drehung → S sinkt (kaum Curl); sehr wenig Drehung → S klein **und** zusätzliche Zufallskomponente:
   `a_noise = C_noise · g · F(v) · (1 − grip(ω)) · ξ(t)`, ξ = geseedeter Ornstein-Uhlenbeck-Prozess (τ = 2,5 s, Pebble-Zufall) → „unberechenbar“. Bei normaler Drehung ist grip = 1 und der Zufall verschwindet.
-- **Wischen reduziert Curl**: μ̃_slow sinkt im gewischten Bereich → weniger Curl („hält die Linie“).
+- **Wischen reduziert Curl**: c_ice sinkt im gewischten Bereich → weniger Curl („hält die Linie“).
 - **Richtungswischen**: Wischen auf einer Seite senkt die Reibung dort → Pivot eher auf der ungewischten Seite → kleine Ablenkung **weg von der gewischten Seite**. C_dir ≪ C_curl (Ziel: max. ≈ 5–10 cm Effekt über die letzten 10 m), entspricht heutigen Besenmaterialien.
 - Begründung der Struktur: Murata zeigt, dass der Curl aus der Links-rechts-Asymmetrie der Drehpunktbildung stammt (langsame Seite), Shegelski/Mancini, dass das Ergebnis im üblichen ω-Bereich kaum von ω abhängt, wohl aber von v. Eine rein mikroskopische Herleitung aus den Punktgeschwindigkeiten liefert zwar die Richtung, skaliert aber linear mit ω – widerspricht der Praxis; deshalb die explizite Sättigung S(ω).
 - Der Curl dreht den Geschwindigkeitsvektor (senkrechte Kraft, keine Energiezufuhr). Bei v < v_stop (≈ 2 mm/s) wird a_curl ausgeblendet; bei v = 0 und |ω| < ω_stop ruht der Stein (Sleep).
@@ -89,7 +89,7 @@ Raster über das ganze Sheet, Zellgröße **4 cm** (≈ 119 × 1143 Zellen, Floa
 | `base` | lokale Grundreibung (Pebble-Qualität, kleine Störungen, geseedet, räumlich geglättet ±2–3 %) | Faktor auf μ |
 | `curl` | lokaler Curl-Faktor | Faktor auf C_curl |
 | `wear` | Pebble-Abnutzung 0…1, wächst entlang befahrener Laufwege (∝ gelaufene Strecke) | μ·(1 − α_w·wear), Curl·(1 − β_w·wear) → **schneller und gerader** |
-| `heat` | Wischwärme (relative Temperaturerhöhung) | μ·(1 − α_s·h/(h + h_½)); Abklingen exp(−t/τ_h), τ_h ≈ 3 s |
+| `heat` | Wischwärme (relative Temperaturerhöhung) | μ·(1 − 0,25·h/(h + 1)), Curl·(1 − 0,7·h/(h + 0,3)); Abklingen τ_h = 1,5 s |
 | `fall` | grobes Gefälle (0,5 m Raster), seitliche Neigung | a_fall = g · Neigung (≈ 1–5·10⁻⁵ → wenige cm über einen Draw) |
 
 - Schalter in config: `falls`, `wear`, `endDrift` (zwischen Ends ändern sich μ₀ und Curl leicht, ±2 %, geseedet, Abnutzung bleibt) – Spieler müssen das Eis lesen.
@@ -99,14 +99,36 @@ Raster über das ganze Sheet, Zellgröße **4 cm** (≈ 119 × 1143 Zellen, Floa
 
 ## 6. Wischen
 
-- Besenköpfe 0,10 × 0,30 m (quer), Position **vor dem Stein**: Abstand 0,05–0,40 m vor der Vorderkante, seitlicher Versatz wählbar (links / mittig / rechts der Laufbahn).
-- Wärmeeintrag pro Tick in die überstrichenen Zellen: `Δh = k_heat · I_eff · dt`, `I_eff = I · (1 − fatigue)`, I ∈ [0,1] aus Druck × Tempo (Eingabe: Tipp-Rhythmus oder Haltedruck).
-- Wirkung: weniger Reibung vor dem Stein → **mehr Weg**; weniger μ̃_slow → **weniger Curl**.
-- **Ermüdung** pro Wischer: `fatigue' = k_f · I − k_r · (1 − I)`, begrenzt auf [0, fatigue_max ≈ 0,4]; Erholung zwischen den Würfen (vollständig bis fast vollständig).
-- Nur vor dem Stein wirksam (Zellen hinter der Vorderkante werden nicht erwärmt).
-- **Besenkontakt**: Überschneidet die Besenkopf-Hitbox den Steinumfang (z. B. Besen zu nah vor schnell ankommendem Stein beim Wechsel der Position), wird ein `touchedStone`-Event erzeugt → Regel R9.
-- Wischregeln (R8) setzt das Regelmodul um: ab Tee Line nur ein Wischer je Team; Gegner-Skip ab Tee Line.
-- Kalibrierziele: volles, hartes Wischen über den ganzen Weg **+2–3 m**; nur letzte ~5 m: **+0,3–1,0 m**; Curl mit vollem Wischen **≥ 20 % geringer**.
+Umsetzung: `src/physics/sweep.ts` (Wischer), Wärme-Ebene in `ice.ts`, Parameter `SWEEP` und `ICE.heat*` in `config.ts`.
+
+- **Zwei Wischer**, einzeln gesteuert. Eingabe pro Tick und Wischer: `{ stoneId, intensity 0…1, side −1|0|+1 }`. Die Intensität (Druck × Tempo) wird auf 1/64 quantisiert und kann pro Tick aufgezeichnet werden (Replays).
+- **Wischfläche** je Besen: 0,10 m (längs) × 0,16 m (quer), **direkt vor dem Stein** (Abstand zur Vorderkante 5 cm bzw. 17 cm für den zweiten Wischer). `side = 0`: mittig über den ganzen Laufweg; `side = ±1`: 4,5 cm zur Seite versetzt → eine Hälfte des Laufrings bekommt mehr Wärme.
+- **Wärmeeintrag** in alle Zellen unter dem Besen: `Δh = k_heat · I · (1 − fatigue) · dt`. Eine Zelle liegt D/v Sekunden unter dem Besen → bei langsamem Stein mehr Wärme pro Zelle (Wischen wirkt am Ende des Weges stärker – wie in der Praxis).
+- **Abklingen**: Wärme zerfällt mit τ = 1,5 s (alle 12 Ticks für die Liste der warmen Zellen, Faktor über deterministisches `dexp`); nach ~10 s ist das Eis wieder im Grundzustand.
+- **Wirkung im Eisfeld** (Sättigung, `warm(h, h½) = h / (h + h½)`):
+  - Reibung: `μ ← μ · (1 − 0,25 · warm(h, 1,0))` → **mehr Weg**
+  - Curl-Faktor: `c ← c · (1 − 0,7 · warm(h, 0,3))` → **weniger Curl**; der Curl reagiert früher als die Reibung (schon leichtes Wischen „hält die Linie“).
+- Der Stein liest den Curl-Faktor an allen Kontaktpunkten des Laufrings; die langsame Seite zählt leicht stärker (Gewicht 0,52 : 0,48, angelehnt an Murata). Dazu der kleine Richtungsterm `C_dir · (μ̄_L − μ̄_R)`.
+- **Richtungswischen**: Wischen auf der Innenseite des Curls (langsame Seite) hält den Stein etwas gerader, Wischen außen lässt ihn etwas mehr curlen; Unterschied links/rechts ≈ 5 cm über einen ganzen Draw – bewusst klein (heutige Besenmaterialien).
+- **Ermüdung** pro Wischer: `fatigue' = 0,012 · I² − 0,04 · (1 − I)` pro Sekunde, begrenzt auf [0; 0,4]. Hartes Dauerwischen kostet nach 20 s ≈ 24 % Wirkung; lockeres Wischen (I ≤ 0,8) ermüdet nicht; Pausen und `recover(sekunden)` zwischen den Würfen erholen.
+- **Nur vor dem Stein wirksam**; kein Effekt bei ruhendem Stein.
+- **Besenkontakt**: Der Besenkopf (Radius 8 cm) hebt automatisch vor **ruhenden** Steinen ab (kein Wischen dort). Läuft ein **anderer bewegter Stein** in einen aufgesetzten Besen (z. B. nach einem Treffer, wenn weitergewischt wird), entsteht ein `touched`-Event → Regel R9. Wer nach einer Kollision nicht „Off!“ ruft, riskiert also einen berührten Stein.
+- **Wechsel zu einem anderen Stein** (z. B. den angespielten Stein weiterwischen): Der Wischer braucht Zeit, um hinzulaufen (4 m/s), erst dann wirkt das Wischen.
+- Wischregeln (R8: ab Tee Line nur ein Wischer je Team; Gegner-Skip ab Tee Line) setzt das Regelmodul in Phase 5 um – die Physik nimmt nur Kommandos entgegen.
+- Simulationen mit Wischen (KI, Vorschau) laufen auf `ice.clone()`; eine Welt mit `mutateIce = false` ignoriert Wischen und verändert das Eis nicht.
+
+Gemessen (ideales normales Eis, Tee-Draw, `npx vite-node scripts/tune-sweep.ts`):
+
+| Wischen | Weg-Gewinn | Curl (ungewischt 1,22 m) |
+|---|---|---|
+| beide hart, ganzer Weg | **+2,59 m** | 0,85 m (70 %) |
+| beide halbe Intensität, ganzer Weg | +1,71 m | 0,93 m |
+| ein Wischer hart | +1,58 m | 0,94 m |
+| beide hart, letzte 10 m | +1,16 m | 1,10 m |
+| beide hart, letzte 5 m | +0,65 m | 1,18 m |
+| beide hart, nur linke / rechte Seite | +1,87 / +1,85 m | 0,99 / 0,94 m |
+
+Gleicher Endpunkt (leichter geworfen + voll gewischt statt ungewischt): Curl 0,80 m statt 1,22 m.
 
 ## 7. Kollisionen
 
@@ -149,7 +171,7 @@ Raster über das ganze Sheet, Zellgröße **4 cm** (≈ 119 × 1143 Zellen, Floa
 | K16 | Schräger Treffer | Ablenkwinkel ≈ 90° Summe (minus Restitutions-/Reibungseffekte), Throw 0,5–4° | Impulsmodell |
 | K17 | Determinismus | gleicher Seed + Eingabe → bitgleiches Ergebnis | — |
 
-Kalibrierte Parameter (Stand Phase 2; Wisch-Parameter folgen in Phase 3):
+Kalibrierte Parameter (Stand Phase 3; Wisch-Parameter siehe Abschnitt 6):
 
 | Parameter | Wert | Bemerkung |
 |---|---|---|
@@ -159,8 +181,9 @@ Kalibrierte Parameter (Stand Phase 2; Wisch-Parameter folgen in Phase 3):
 | Curl-Skala straight / normal / swingy | 0,7 / 1,0 / 1,35 | |
 | v_c, v_lo | 1,6 m/s, 0,05 m/s | |
 | ω_lo, ω_hi | 0,1 rad/s, 3 rad/s | |
-| κ (Reibungs-Sensitivität des Curls) | 2 | Feintuning in Phase 3 |
-| C_dir, C_noise, τ_noise | 0,0012 · 0,002 · 2,5 s | |
+| Gewicht langsame Seite | 0,52 | |
+| C_dir, C_noise, τ_noise | 0,0005 · 0,002 · 2,5 s | |
+| k_heat, τ_h | 4,5 /s · 1,5 s | |
 | e, μ_ss | 0,85 · 0,06 | |
 | Abgabe: Release 1,5 m vor Hog, ω₀ | 0,85 rad/s | ≈ 3,2 Umdrehungen beim Draw |
 
@@ -177,7 +200,7 @@ Gemessene Ergebnisse (ideales Eis, `npx vite-node scripts/tune.ts`):
 - Halber Treffer: Zielstein-Throw ≈ 3°; Volltreffer: Stoßstein behält ≈ 7,5 % Geschwindigkeit.
 - Rechenzeit: ≈ 11 ms pro Draw (6 500 Ticks) auf einem Desktop-Kern → Monte-Carlo-KI machbar.
 
-Tests: `tests/physics/calibration.test.ts` (K1–K9), `collision.test.ts` (K15, K16, Ketten, Double, Tunneling, Linien), `determinism.test.ts` (K17), `ice.test.ts` (Feld, Falls, Abnutzung, End-Drift).
+Tests: `tests/physics/calibration.test.ts` (K1–K9), `collision.test.ts` (K15, K16, Ketten, Double, Tunneling, Linien), `determinism.test.ts` (K17), `ice.test.ts` (Feld, Falls, Abnutzung, End-Drift), `sweep.test.ts` (K10–K14, Besenkontakt, Abkühlen).
 
 ## 10. Parameter anpassen
 
