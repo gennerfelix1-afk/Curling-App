@@ -92,6 +92,9 @@ export class Controls {
     this.hold('pad-sweep-0', 0);
     this.hold('pad-sweep-1', 1);
     this.hold('pad-skip', 2);
+    this.press('btn-call-hard', () => this.game.setSweepCall('hard'));
+    this.press('btn-call-clean', () => this.game.setSweepCall('clean'));
+    this.press('btn-call-off', () => this.game.setSweepCall('off'));
     $('btn-concede').addEventListener('click', () => {
       const g = this.game;
       if (confirm(`${TEAM_NAMES[g.team]} gibt die Partie auf?`)) g.concede(g.team);
@@ -131,6 +134,15 @@ export class Controls {
           break;
         case 'KeyA':
           game.sweepDown(0);
+          break;
+        case 'KeyH':
+          game.setSweepCall('hard');
+          break;
+        case 'KeyJ':
+          game.setSweepCall('clean');
+          break;
+        case 'KeyK':
+          game.setSweepCall('off');
           break;
         case 'KeyD':
           game.sweepDown(1);
@@ -238,7 +250,12 @@ export class Controls {
     team.textContent = TEAM_NAMES[g.team];
     team.dataset.team = String(g.team);
     let info: string;
-    if (g.lsd) info = `Last Stone Draw ${g.lsd.index + 1}/4`;
+    const drill = g.drill;
+    if (drill) {
+      const names = { draw: 'Draw-Challenge', takeout: 'Takeout-Challenge', ice: 'Eis lesen' };
+      const res = drill.results.map((r) => (drill.kind === 'takeout' ? String(r) : (r * 100).toFixed(0))).join(' · ');
+      info = `${names[drill.kind]} ${Math.min(drill.results.length + 1, drill.attempts)}/${drill.attempts}${res ? ` — ${res}${drill.kind === 'takeout' ? ' P.' : ' cm'}` : ''}`;
+    } else if (g.lsd) info = `Last Stone Draw ${g.lsd.index + 1}/4`;
     else if (phase === 'gameOver') info = 'Partie beendet';
     else {
       const endName = g.match.isExtraEnd ? 'Extra End' : `End ${g.match.end}/${g.match.ends}`;
@@ -287,6 +304,22 @@ export class Controls {
     if (phase === 'gesture') {
       $('pace-marker').style.left = `${50 + g.gesturePace * 50}%`;
     }
+
+    // who sweeps? pads (manual), call buttons (AI team-mates on call) or nothing to do (auto / AI throws)
+    const ai = g.isAI(g.team);
+    const mode = ai ? 'watch' : g.options.sweepMode;
+    document.body.dataset.sweep = mode;
+    document.body.dataset.drill = drill ? '1' : '0';
+    if (phase === 'running' && mode === 'calls') {
+      $('btn-call-hard').classList.toggle('on', g.sweepCall === 'hard');
+      $('btn-call-clean').classList.toggle('on', g.sweepCall === 'clean');
+      $('btn-call-off').classList.toggle('on', g.sweepCall === 'off');
+    }
+    if (phase === 'aiThink') {
+      $('think-bar').style.width = `${Math.round(g.thinking * 100)}%`;
+      $('think-text').textContent = `${TEAM_NAMES[g.team]} (KI) überlegt …`;
+    }
+    $('watch-text').textContent = ai ? `${TEAM_NAMES[g.team]} (KI) wischt selbst` : 'Deine Mitspieler wischen nach Ansage des Skips';
 
     // meter
     if (phase === 'meterWeight' || phase === 'meterLine') {

@@ -62,5 +62,5 @@ Optional danach: Mixed Doubles (vorgesetzte Steine, Power Play), Thinking Time.
 - [x] Phase 4 – Minimal spielbar: 2D-Draufsicht, Abgabe mit Timing-Anzeigen, Wischen per Tasten/Touch (67 Tests grün)
 - [x] Phase 5 – Regeln + Spielablauf: Ends, Wertung + Messung, Hammer/LSD, Hog Line, FGZ, No-Tick, Wischregeln, berührte Steine, Concede, Extra End, Scoreboard (110 Tests grün)
 - [x] Phase 6 – 3D-Ansicht (Three.js) mit Kamerafahrt, Wisch-Geste für die Abgabe, Sound, Debug-Overlay (118 Tests grün)
-- [ ] Phase 7
+- [x] Phase 7 – KI-Gegner (4 Stufen, Monte-Carlo über die echte Physik), Wisch-Berater, Wisch-Modi, Trainingsmodi – siehe docs/AI.md
 - [ ] Phase 8

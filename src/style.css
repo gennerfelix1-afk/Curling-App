@@ -52,7 +52,15 @@ body[data-menu='open'] #menu { display: flex; }
 #menu p { margin: 0; font-size: 12px; opacity: 0.7; text-align: center; }
 #btn-start { background: var(--accent); font-weight: 800; }
 body[data-phase='meterWeight'] #panel-meter, body[data-phase='meterLine'] #panel-meter { display: flex; }
-body[data-phase='running'] #panel-sweep { display: flex; }
+body[data-phase='running'][data-sweep='manual'] #panel-sweep { display: flex; }
+body[data-phase='running'][data-sweep='calls'] #panel-calls { display: flex; }
+body[data-phase='running'][data-sweep='auto'] #panel-watch, body[data-phase='running'][data-sweep='watch'] #panel-watch { display: flex; }
+body[data-phase='aiThink'] #panel-think, body[data-phase='slide'][data-sweep='watch'] #panel-watch { display: flex; flex-direction: column; }
+#panel-calls button { min-height: 64px; min-width: 96px; font-weight: 800; }
+#think { width: min(80vw, 320px); height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.15); overflow: hidden; }
+#think-bar { height: 100%; width: 0; background: var(--accent); }
+body[data-drill='1'] #scoreboard, body[data-drill='1'] #btn-concede { display: none; }
+body[data-mode='hotseat'] .ai-only, body[data-mode='drill'] .ai-only, body[data-mode='drill'] .match-only { display: none; }
 
 .group { display: flex; gap: 6px; align-items: center; }
 #weight-label { min-width: 96px; text-align: center; font-weight: 700; }

@@ -18,11 +18,16 @@ import {
   type EndScore,
   type ProtectedStone,
 } from '../rules/rules';
+import { IceBook } from '../ai/iceBook';
+import { AI_LEVELS, LIGHT_BIAS, Planner } from '../ai/planner';
+import type { Shot, ShotTarget } from '../ai/shots';
+import { CALL_INTENSITY, CALL_TEXT, SweepAdvisor, type SweepCall } from '../ai/sweepAdvisor';
 import { Match, POSITIONS } from './match';
-import { buildWeightTable, type Weight } from './weights';
+import { weightsFromBook, type Weight } from './weights';
 
 export type Phase =
   | 'aim'
+  | 'aiThink'
   | 'meterWeight'
   | 'meterLine'
   | 'gesture'
@@ -71,7 +76,29 @@ export interface GameOptions {
   touchRule: boolean;
   /** Delivery mechanic: timing meters or a swipe gesture. */
   delivery: 'meter' | 'gesture';
+  /** Who controls each team. */
+  players: ['human' | 'ai', 'human' | 'ai'];
+  /** Strength of the AI, index into AI_LEVELS (0…3). */
+  aiLevel: number;
+  /**
+   * Sweeping of human teams: 'manual' = the player sweeps, 'calls' = AI team-mates sweep on the
+   * player's calls (hard / clean / off), 'auto' = AI team-mates sweep on the skip's judgement.
+   */
+  sweepMode: 'manual' | 'calls' | 'auto';
+  /** Training drill instead of a match. */
+  drill: DrillKind | null;
 }
+
+export type DrillKind = 'draw' | 'takeout' | 'ice';
+
+export interface DrillState {
+  kind: DrillKind;
+  /** Result of each attempt: distance to the tee [m] (draw, ice) or points (takeout). */
+  results: number[];
+  attempts: number;
+}
+
+export const DRILL_ATTEMPTS = 8;
 
 export const DEFAULT_GAME_OPTIONS: GameOptions = {
   seed: 1,
@@ -82,6 +109,10 @@ export const DEFAULT_GAME_OPTIONS: GameOptions = {
   hammer: 'coin',
   touchRule: true,
   delivery: 'meter',
+  players: ['human', 'human'],
+  aiLevel: 1,
+  sweepMode: 'manual',
+  drill: null,
 };
 
 /** Live sweeping input of one sweeper. */
@@ -158,6 +189,25 @@ export class Game {
   message = '';
   messageAge = 0;
 
+  /** Book on the current ice (weights, curl) for the current direction of play. */
+  book: IceBook;
+  /** Training drill in progress. */
+  drill: DrillState | null = null;
+  /** Call for AI team-mates in sweep mode 'calls'. */
+  sweepCall: SweepCall = 'off';
+  /** The skip's current call for the running stone. */
+  advice: SweepCall = 'off';
+  /** Shot the AI is going to play (for the display). */
+  aiShot: Shot | null = null;
+  private planner: Planner | null = null;
+  /** Shot fixed without a search (last stone draw). */
+  private planned_: Shot | null = null;
+  private thinkT = 0;
+  /** Exact execution of an AI delivery: speed and line error at the broom. */
+  private aiExec: { speed: number; aimOffset: number } | null = null;
+  private advisor: SweepAdvisor | null = null;
+  private decisionT = 0;
+
   private beforeShot: Stone[] = [];
   private protectedNow: ProtectedStone[] = [];
   private touch: TouchInfo | null = null;
@@ -165,20 +215,35 @@ export class Game {
   private afterDecision: ((choice: string) => void) | null = null;
 
   private previewDirty = true;
-  private previewPath: number[] = [];
+  private plan: { path: number[]; hitId: number } = { path: [], hitId: -1 };
   private rng: Rng;
 
   constructor(options: Partial<GameOptions> = {}) {
     this.options = { ...DEFAULT_GAME_OPTIONS, ...options };
     this.rng = new Rng(this.options.seed);
-    this.ice = new Ice({ seed: this.options.seed, ...this.options.ice });
+    let iceOptions = { seed: this.options.seed, ...this.options.ice };
+    if (this.options.drill === 'ice') {
+      // unknown ice: speed and curl are drawn at random and have to be found out
+      const pick = new Rng(this.options.seed ^ 0x51f15e);
+      const speeds = ['keen', 'normal', 'heavy'] as const;
+      const curls = ['straight', 'normal', 'swingy'] as const;
+      iceOptions = { ...iceOptions, speed: speeds[pick.nextU32() % 3], curl: curls[pick.nextU32() % 3] };
+      this.options.preview = false;
+    }
+    this.ice = new Ice(iceOptions);
     this.world = new World(this.ice, this.rng.nextU32());
     this.world.dir = this.dir;
-    this.weights = buildWeightTable(this.ice, this.dir);
+    this.book = new IceBook(this.bookIce(), this.dir);
+    this.weights = weightsFromBook(this.book);
     this.weightIndex = this.weights.findIndex((w) => w.id === 'tee');
     this.aimY = teeY(this.dir);
-    const h = this.options.hammer;
+    const h = this.options.drill ? 1 : this.options.hammer;
     let hammer: number;
+    if (this.options.drill) {
+      this.drill = { kind: this.options.drill, results: [], attempts: DRILL_ATTEMPTS };
+      this.options.players = ['human', 'human'];
+      this.setupDrill();
+    }
     if (h === 'lsd') {
       hammer = 0;
       this.lsd = { dist: [[], []], index: 0 };
@@ -193,6 +258,19 @@ export class Game {
     this.match = new Match(this.options.ends, hammer);
   }
 
+  /**
+   * Ice the weight book is measured on. In the "read the ice" drill the book is from standard
+   * ice – the player has to find out how the real ice differs.
+   */
+  private bookIce(): Ice {
+    if (this.options.drill !== 'ice') return this.ice;
+    return new Ice({ seed: 1, variation: false, falls: false, wear: false, endDrift: false });
+  }
+
+  isAI(team: number): boolean {
+    return this.options.players[team] === 'ai';
+  }
+
   private say(text: string): void {
     this.message = text;
     this.messageAge = 0;
@@ -200,18 +278,20 @@ export class Game {
 
   /** Team that throws the current stone. */
   get team(): number {
+    if (this.drill) return 0;
     if (this.lsd) return this.lsd.index % 2;
     return this.match.teamForShot(Math.min(this.shot, this.stonesPerEnd - 1));
   }
 
   /** Position of the player who throws the current stone. */
   get thrower(): string {
+    if (this.drill) return 'Training';
     return this.lsd ? 'LSD' : POSITIONS[Math.min(3, this.shot >> 2)];
   }
 
   /** Stones each team still has to play in this end. */
   stonesLeft(team: number): number {
-    if (this.lsd) return 0;
+    if (this.lsd || this.drill) return 0;
     const thrown = this.match.firstTeam === team ? (this.shot + 1) >> 1 : this.shot >> 1;
     return RULES.stonesPerTeam - thrown;
   }
@@ -250,6 +330,7 @@ export class Game {
    * Returns true if the tap was used.
    */
   tap(): boolean {
+    if (this.phase === 'aim' && this.isAI(this.team)) return false;
     switch (this.phase) {
       case 'aim':
         if (this.options.delivery === 'gesture') {
@@ -363,6 +444,7 @@ export class Game {
 
   /** Aim point including the line error of the delivery. */
   private get actualAimX(): number {
+    if (this.aiExec) return this.aimX + this.aiExec.aimOffset;
     return this.aimX + this.lineDev * EXECUTION.lineError[this.options.difficulty];
   }
 
@@ -384,8 +466,12 @@ export class Game {
     const s = this.current!;
     const p = this.placeSlidingStone();
     const diff = this.options.difficulty;
-    const speed = this.weight.speed * (1 + this.weightDev * EXECUTION.weightError[diff]);
+    const speed = this.aiExec
+      ? this.aiExec.speed
+      : this.weight.speed * (1 + this.weightDev * EXECUTION.weightError[diff]);
     const angle = s.angle;
+    this.advisor = new SweepAdvisor(this.shotTarget());
+    this.advice = 'off';
     this.world.stones.pop(); // replace the sliding dummy by the released stone
     const released = deliverStone(this.world, this.stoneId(), this.team, {
       dir: this.dir,
@@ -419,7 +505,7 @@ export class Game {
 
   /** The given team concedes the match. */
   concede(team: number): void {
-    if (this.phase === 'gameOver' || this.lsd) return;
+    if (this.phase === 'gameOver' || this.lsd || this.drill) return;
     this.match.concede(team);
     this.phase = 'gameOver';
     this.say(`${TEAM_NAMES[team]} gibt auf – ${TEAM_NAMES[1 - team]} gewinnt.`);
@@ -442,6 +528,11 @@ export class Game {
     this.sweepSide = side;
   }
 
+  /** Call for the AI team-mates (sweep mode 'calls'). */
+  setSweepCall(call: SweepCall): void {
+    this.sweepCall = call;
+  }
+
   /** Current intensity of a sweeper's input, 0…1. */
   sweepIntensity(sweeper: number): number {
     const s = this.sweepInput[sweeper];
@@ -453,6 +544,17 @@ export class Game {
   /** Advance the game by real time; physics runs in fixed ticks. */
   update(seconds: number): void {
     this.messageAge += seconds;
+    if (this.phase === 'aim' && this.isAI(this.team)) this.startThinking();
+    if (this.phase === 'aiThink') {
+      this.thinkT += seconds;
+      // time-sliced search: the result does not depend on the slicing
+      if ((!this.planner || this.planner.step(9)) && this.thinkT >= 0.9) this.playAiShot();
+      return;
+    }
+    if (this.phase === 'decision' && this.decision && this.isAI(this.decision.team)) {
+      this.decisionT += seconds;
+      if (this.decisionT > 1.2) this.decide(this.decision.kind === 'noTick' ? 'replace' : 'remove');
+    }
     this.acc += Math.min(seconds, 0.25);
     while (this.acc >= DT) {
       this.acc -= DT;
@@ -486,6 +588,82 @@ export class Game {
       default:
         break;
     }
+  }
+
+  // ───────────── AI ─────────────
+
+  private startThinking(): void {
+    const team = this.team;
+    const m = this.match;
+    this.thinkT = 0;
+    this.aiShot = null;
+    this.phase = 'aiThink';
+    if (this.lsd) {
+      // last stone draw: simply a draw to the button with the prescribed turn
+      const T = teeY(this.dir) * this.dir;
+      const speed = this.book.speedForDistance(this.book.toTee);
+      const aim = this.book.broomFor(speed, this.turn === 'cw', 0, T);
+      this.planned_ = {
+        kind: 'draw',
+        label: 'Draw auf den Button',
+        turn: this.turn,
+        speed,
+        aimX: aim * this.dir,
+        aimY: teeY(this.dir),
+        target: { stopX: 0, stopY: teeY(this.dir) },
+      };
+      this.planner = null;
+      return;
+    }
+    this.planned_ = null;
+    this.planner = new Planner({
+      ice: this.ice,
+      book: this.book,
+      stones: this.world.stones,
+      team,
+      shotIndex: this.shot,
+      hammer: m.hammer,
+      scoreDiff: m.total(team) - m.total(1 - team),
+      endsLeft: Math.max(0, m.ends - m.end),
+      level: AI_LEVELS[this.options.aiLevel],
+      seed: this.rng.nextU32(),
+    });
+  }
+
+  /** Progress of the AI's deliberation, 0…1. */
+  get thinking(): number {
+    return this.phase === 'aiThink' && this.planner ? this.planner.progress : 0;
+  }
+
+  private playAiShot(): void {
+    const shot = this.planned_ ?? this.planner!.best!;
+    const level = AI_LEVELS[this.options.aiLevel];
+    this.planner = null;
+    this.planned_ = null;
+    this.aiShot = shot;
+    this.aimX = shot.aimX;
+    this.aimY = shot.aimY;
+    this.turn = shot.turn;
+    // execution error of the thrower; draws are thrown a touch light and swept to the target
+    const light = shot.target.stopY !== undefined ? LIGHT_BIAS : 0;
+    this.aiExec = {
+      speed: shot.speed * (1 + this.rng.gauss() * level.weightSigma - light),
+      aimOffset: this.rng.gauss() * level.lineSigma * this.dir,
+    };
+    this.say(`${TEAM_NAMES[this.team]} spielt: ${shot.label}`);
+    this.beginSlide();
+  }
+
+  /** What the stone is supposed to do, for the skip's sweeping calls. */
+  private shotTarget(): ShotTarget {
+    if (this.aiShot && this.aiExec) return this.aiShot.target;
+    const w = this.weight;
+    if (w.kind === 'draw' && w.value < 2) {
+      return { stopY: teeY(this.dir) + this.dir * w.value };
+    }
+    // hit: the stone the planned path meets first
+    const p = this.planned;
+    return p.hitId >= 0 ? { hitId: p.hitId } : {};
   }
 
   /** Planned release point on the line hack → broom. */
@@ -535,20 +713,27 @@ export class Game {
     for (const inp of this.sweepInput) inp.boost = Math.max(0, inp.boost - BOOST_DECAY * DT);
     const raw: (SweepCommand | null)[] = [null, null, null];
     let any = false;
-    if (s.inPlay && s.moving) {
+    const running = s.inPlay && s.moving;
+    // the skip's call for the running stone
+    this.advice = running && this.advisor ? this.advisor.update(this.world.stones, s, this.ice, this.dir, this.world.tick) : 'off';
+    if (running) {
+      const mode = this.isAI(this.team) ? 'auto' : this.options.sweepMode;
       for (let k = 0; k < 2; k++) {
-        const i = this.sweepIntensity(k);
+        let i: number;
+        if (mode === 'manual') i = this.sweepIntensity(k);
+        else i = CALL_INTENSITY[mode === 'auto' ? this.advice : this.sweepCall];
         if (i > 0) {
-          raw[k] = { stoneId: s.id, intensity: i, side: this.sweepSide };
+          raw[k] = { stoneId: s.id, intensity: i, side: mode === 'manual' ? this.sweepSide : 0 };
           any = true;
         }
       }
     }
     // the other team's skip may sweep any stone that has reached the tee line
-    const i2 = this.lsd ? 0 : this.sweepIntensity(2);
-    if (i2 > 0) {
+    if (!this.lsd && !this.drill) {
       const target = this.skipTarget();
-      if (target) {
+      // an AI skip sweeps opposition stones out of the house
+      const i2 = this.isAI(1 - this.team) ? (target && target.team === this.team ? 1 : 0) : this.sweepIntensity(2);
+      if (i2 > 0 && target) {
         raw[2] = { stoneId: target.id, intensity: i2, side: 0 };
         any = true;
       }
@@ -580,7 +765,7 @@ export class Game {
 
   /** The other team's skip may sweep right now. */
   get skipMaySweep(): boolean {
-    return this.phase === 'running' && !this.lsd && this.skipTarget() !== null;
+    return this.phase === 'running' && !this.lsd && !this.drill && !this.isAI(1 - this.team) && this.skipTarget() !== null;
   }
 
   /** React to physics events of this tick (brush contact with a moving stone, R9). */
@@ -588,7 +773,7 @@ export class Game {
     const ev = this.world.events;
     for (; this.eventCursor < ev.length; this.eventCursor++) {
       const e = ev[this.eventCursor];
-      if (e.type !== 'touched' || !this.options.touchRule || this.touch || this.lsd) continue;
+      if (e.type !== 'touched' || !this.options.touchRule || this.touch || this.lsd || this.drill) continue;
       const stone = this.world.getStone(e.id);
       if (!stone) continue;
       const offender = e.sweeper < 2 ? this.team : 1 - this.team;
@@ -612,7 +797,7 @@ export class Game {
 
   /** All stones have come to rest: apply the rules for this delivery. */
   private onRest(): void {
-    if (this.lsd) {
+    if (this.lsd || this.drill) {
       this.settle();
       return;
     }
@@ -640,6 +825,7 @@ export class Game {
 
   private ask(decision: Decision, then: (choice: string) => void): void {
     this.decision = decision;
+    this.decisionT = 0;
     this.afterDecision = then;
     this.phase = 'decision';
   }
@@ -719,6 +905,14 @@ export class Game {
     this.eventCursor = 0;
     this.world.sweepers.recover(30);
     this.previewDirty = true;
+    this.aiExec = null;
+    this.aiShot = null;
+    this.advisor = null;
+    this.advice = 'off';
+    if (this.drill) {
+      this.nextDrill();
+      return;
+    }
     if (this.lsd) {
       this.nextLsd();
       return;
@@ -733,6 +927,55 @@ export class Game {
     } else {
       this.phase = 'aim';
     }
+  }
+
+  // ───────────── training drills ─────────────
+
+  /** Prepare the sheet for the next attempt of the drill. */
+  private setupDrill(): void {
+    this.world?.stones.splice(0);
+    const d = this.drill!;
+    if (d.kind === 'takeout' && this.world) {
+      // a stone somewhere in the house has to be removed
+      const x = this.rng.range(-1.1, 1.1);
+      const along = this.rng.range(-1.0, 0.8);
+      this.world.addStone(createStone(8, 1, x, teeY(this.dir) + this.dir * along));
+    }
+  }
+
+  private nextDrill(): void {
+    const d = this.drill!;
+    const s = this.current;
+    let text: string;
+    if (d.kind === 'takeout') {
+      const target = this.world.getStone(8);
+      const removed = !target || !target.inPlay || lsdDistance(target, this.dir) === RULES.lsdMiss;
+      const stays = !!s && s.inPlay && lsdDistance(s, this.dir) < RULES.lsdMiss;
+      const points = removed ? (stays ? 2 : 1) : 0;
+      d.results.push(points);
+      text = removed ? (stays ? 'Hit and Stay – 2 Punkte' : 'Takeout – 1 Punkt') : 'Verfehlt – 0 Punkte';
+    } else {
+      const dist = s ? lsdDistance(s, this.dir) : RULES.lsdMiss;
+      d.results.push(dist);
+      text = dist < RULES.lsdMiss ? `${(dist * 100).toFixed(1)} cm vom Tee` : 'Nicht im House (199,6 cm)';
+    }
+    this.current = null;
+    const n = d.results.length;
+    const sum = d.results.reduce((a, b) => a + b, 0);
+    if (n >= d.attempts) {
+      this.world.stones.length = 0;
+      this.phase = 'gameOver';
+      if (d.kind === 'takeout') this.say(`${text}. Takeout-Challenge: ${sum} von ${d.attempts * 2} Punkten.`);
+      else {
+        const ice = d.kind === 'ice' ? ` Das Eis war: ${this.ice.options.speed}, Curl ${this.ice.options.curl}.` : '';
+        this.say(`${text}. Schnitt: ${((sum / n) * 100).toFixed(1)} cm.${ice}`);
+      }
+      return;
+    }
+    this.say(`${text} (${n}/${d.attempts})`);
+    this.turn = n % 2 === 0 ? 'cw' : 'ccw';
+    this.setupDrill();
+    this.phase = 'aim';
   }
 
   /** Last stone draw: measure the stone, take it off, next draw or decide the hammer. */
@@ -787,7 +1030,8 @@ export class Game {
     this.world.dir = this.dir;
     this.ice.nextEnd(this.rng);
     this.world.sweepers.recover(600);
-    this.weights = buildWeightTable(this.ice, this.dir);
+    this.book = new IceBook(this.bookIce(), this.dir);
+    this.weights = weightsFromBook(this.book);
     this.aimX = 0;
     this.aimY = teeY(this.dir);
     this.phase = 'aim';
@@ -802,16 +1046,11 @@ export class Game {
     return s && this.phase === 'running' ? Math.sqrt(s.vx * s.vx + s.vy * s.vy) : 0;
   }
 
-  /** Skip call matching the current sweeping. */
+  /** The skip's call for the running stone ("HARD!", "Line!", "Clean", "Off!"). */
   get call(): string {
-    if (this.phase !== 'running' || !this.current?.moving) return '';
-    const st = this.world.sweepers.state;
-    const i = Math.max(st[0].down ? this.sweepIntensity(0) : 0, st[1].down ? this.sweepIntensity(1) : 0);
-    const both = st[0].down && st[1].down;
-    if (i >= 0.85 && both) return 'HARD!';
-    if (i >= 0.85) return 'Hard!';
-    if (i > 0) return both ? 'Sweep!' : 'Clean';
-    return 'Off!';
+    if (this.phase !== 'running' || !this.current?.moving || !this.current.inPlay) return '';
+    if (!this.isAI(this.team) && this.options.sweepMode === 'calls') return CALL_TEXT[this.sweepCall];
+    return CALL_TEXT[this.advice];
   }
 
   /**
@@ -819,13 +1058,18 @@ export class Game {
    * the first contact with another stone. Empty when the preview is switched off.
    */
   preview(): readonly number[] {
-    if (!this.options.preview || this.phase !== 'aim') return [];
-    if (!this.previewDirty) return this.previewPath;
+    if (!this.options.preview || this.phase !== 'aim' || this.isAI(this.team)) return [];
+    return this.planned.path;
+  }
+
+  /** The planned throw simulated without sweeping: path and the stone it meets first (-1 = none). */
+  private get planned(): { path: number[]; hitId: number } {
+    if (!this.previewDirty) return this.plan;
     this.previewDirty = false;
     const w = new World(this.ice, 1);
     w.mutateIce = false;
     w.dir = this.dir;
-    for (const s of this.world.stones) if (s.inPlay) w.addStone({ ...s });
+    for (const s of this.world.stones) if (s.inPlay && s !== this.current) w.addStone({ ...s });
     const rp = this.releasePoint(this.aimX);
     const s = deliverStone(w, -1, this.team, {
       dir: this.dir,
@@ -841,8 +1085,15 @@ export class Game {
       if (w.tick % 24 === 0) path.push(s.x, s.y);
     }
     path.push(s.x, s.y);
-    this.previewPath = path;
-    return path;
+    let hitId = -1;
+    for (const e of w.events) {
+      if (e.type === 'collision') {
+        hitId = e.a === -1 ? e.b : e.a;
+        break;
+      }
+    }
+    this.plan = { path, hitId };
+    return this.plan;
   }
 
   /** y of the near hog line (release must happen before it). */

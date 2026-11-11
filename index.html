@@ -63,6 +63,18 @@
     </div>
     <button id="pad-skip"></button>
 
+    <div class="panel" id="panel-calls">
+      <button id="btn-call-hard">HARD! (H)</button>
+      <button id="btn-call-clean">Clean (J)</button>
+      <button id="btn-call-off">Off! (K)</button>
+      <div class="hint">Deine Mitspieler wischen auf deine Ansage</div>
+    </div>
+    <div class="panel" id="panel-watch"><span id="watch-text"></span></div>
+    <div class="panel" id="panel-think">
+      <span id="think-text"></span>
+      <div id="think"><div id="think-bar"></div></div>
+    </div>
+
     <div class="panel" id="panel-result">
       <button id="btn-continue">Weiter</button>
     </div>
@@ -75,14 +87,23 @@
     <div id="menu">
       <div class="card">
         <h1>Curling</h1>
-        <label>Ends <select id="opt-ends"><option value="8">8</option><option value="10">10</option></select></label>
-        <label>Hammer im 1. End <select id="opt-hammer"><option value="coin">Münzwurf</option><option value="lsd">Last Stone Draw</option></select></label>
+        <label>Modus <select id="opt-mode">
+          <option value="ai">Gegen die KI</option>
+          <option value="hotseat">2 Spieler (Hot-Seat)</option>
+          <option value="draw">Training: Draw-Challenge</option>
+          <option value="takeout">Training: Takeout-Challenge</option>
+          <option value="ice">Training: Eis lesen</option>
+        </select></label>
+        <label class="ai-only">KI-Stärke <select id="opt-ai"><option value="0">Anfänger</option><option value="1" selected>Club</option><option value="2">Profi</option><option value="3">Weltklasse</option></select></label>
+        <label>Wischen <select id="opt-sweep"><option value="manual">selbst wischen</option><option value="calls">Mitspieler auf Ansage</option><option value="auto">Mitspieler automatisch</option></select></label>
+        <label class="match-only">Ends <select id="opt-ends"><option value="8">8</option><option value="10">10</option></select></label>
+        <label class="match-only">Hammer im 1. End <select id="opt-hammer"><option value="coin">Münzwurf</option><option value="lsd">Last Stone Draw</option></select></label>
         <label>Eis <select id="opt-ice"><option value="keen">keen (schnell)</option><option value="normal" selected>normal</option><option value="heavy">heavy (langsam)</option></select></label>
         <label>Curl <select id="opt-curl"><option value="straight">straight</option><option value="normal" selected>normal</option><option value="swingy">swingy</option></select></label>
         <label>Schwierigkeit <select id="opt-difficulty"><option value="beginner">Anfänger (mit Vorschau-Linie)</option><option value="club">Club</option><option value="pro">Profi</option></select></label>
         <label>Abgabe <select id="opt-delivery"><option value="meter">Timing-Anzeigen</option><option value="gesture">Wisch-Geste</option></select></label>
         <button id="btn-start">Partie starten</button>
-        <p>2 Spieler am selben Gerät (Hot-Seat). KI-Gegner folgt.</p>
+        <p>Du spielst Rot. Im Training zählen 8 Versuche.</p>
       </div>
     </div>
 

@@ -3,12 +3,13 @@
 Realistisches Curling-Spiel für den Browser (Desktop + Mobile). TypeScript, Vite, Three.js; deterministische
 Physik mit festem Zeitschritt (240 Hz), headless getestet mit Vitest.
 
-**Status:** Phase 6 (komplette Partie nach Regeln für 2 Spieler am selben Gerät, 3D-Ansicht, Sound) abgeschlossen – siehe [`docs/PLAN.md`](docs/PLAN.md).
+**Status:** Phase 7 (Partie gegen die KI oder zu zweit, Trainingsmodi, 3D-Ansicht, Sound) abgeschlossen – siehe [`docs/PLAN.md`](docs/PLAN.md).
 
 ## Dokumentation
 - [`docs/PLAN.md`](docs/PLAN.md) – Architektur und Phasenplan
 - [`docs/RULES.md`](docs/RULES.md) – umgesetzte Regeln (World Curling, Ausgabe 1.9.2026) mit Regelnummern
 - [`docs/PHYSICS.md`](docs/PHYSICS.md) – Physikmodell, Formeln, Parameter, Kalibrierziele
+- [`docs/AI.md`](docs/AI.md) – KI-Gegner, Wisch-Berater (Skip-Rufe), Spiel- und Trainingsmodi
 
 ## Entwicklung
 ```bash
@@ -42,6 +43,7 @@ Ablauf pro Stein: **Besen setzen → Drehung → Gewicht → Abgabe → Wischen*
 | härter wischen | Taste schnell wiederholt drücken | Feld schnell tippen |
 | Wischseite links / mittig / rechts | `1` / `2` / `3` | Buttons zwischen den Feldern |
 | Skip des anderen Teams wischt (ab Tee Line) | `L` halten | Button „Skip … wischt“ |
+| Ansage an die Mitspieler (Wisch-Modus „auf Ansage“): HARD / Clean / Off | `H` / `J` / `K` | Buttons |
 | Kamera: Auto → Draufsicht → Übersicht | `C` | Button „Kamera“ |
 | Ton an / aus | `M` | Lautsprecher-Button |
 | Debug-Overlay (Reibungsfeld, Geschwindigkeit, Drehung, vorhergesagte Bahn) | `B` oder `F3` | – |
@@ -79,4 +81,12 @@ Details mit Regelnummern: [`docs/RULES.md`](docs/RULES.md).
 - **Berührter Stein:** Läuft ein anderer bewegter Stein in einen aufgesetzten Besen, entscheidet das andere Team.
   Also nach einem Treffer rechtzeitig aufhören zu wischen.
 
-KI-Gegner, Trainingsmodi und Replays folgen in den nächsten Phasen.
+## Spielmodi
+
+- **Gegen die KI** (du spielst Rot) in vier Stärken: Anfänger, Club, Profi, Weltklasse.
+- **2 Spieler** am selben Gerät.
+- **Training:** Draw-Challenge, Takeout-Challenge, Eis lesen (je 8 Versuche).
+- **Wischen:** selbst wischen, Mitspieler auf Ansage (HARD / Clean / Off) oder Mitspieler automatisch. Der Skip ruft
+  bei jedem Stein „HARD!“, „Line!“, „Clean“ oder „Off!“ – als Anzeige und gesprochen.
+
+Replays und Feinschliff folgen in der letzten Phase.

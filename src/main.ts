@@ -1,4 +1,4 @@
-import { Game, type GameOptions } from './game/game';
+import { Game, type DrillKind, type GameOptions } from './game/game';
 import { Controls } from './input/controls';
 import type { CurlAmount, Difficulty, IceSpeed } from './physics/config';
 import { Sound } from './audio/sound';
@@ -14,7 +14,13 @@ const value = (id: string): string => (document.getElementById(id) as HTMLSelect
 function optionsFromMenu(): Partial<GameOptions> {
   const difficulty = value('opt-difficulty') as Difficulty;
   const hammer = value('opt-hammer') as 'coin' | 'lsd';
+  const mode = value('opt-mode');
+  const drill = mode === 'draw' || mode === 'takeout' || mode === 'ice' ? (mode as DrillKind) : null;
   return {
+    players: mode === 'ai' ? ['human', 'ai'] : ['human', 'human'],
+    aiLevel: Number(value('opt-ai')),
+    sweepMode: value('opt-sweep') as 'manual' | 'calls' | 'auto',
+    drill,
     seed: Number(params.get('seed')) || (Date.now() & 0x7fffffff),
     ends: Number(value('opt-ends')),
     hammer,
@@ -54,6 +60,13 @@ document.getElementById('btn-start')!.addEventListener('click', start);
 document.getElementById('btn-continue')!.addEventListener('click', () => {
   if (game.phase === 'gameOver') document.body.dataset.menu = 'open';
 });
+const modeSelect = document.getElementById('opt-mode') as HTMLSelectElement;
+const syncMode = (): void => {
+  const m = modeSelect.value;
+  document.body.dataset.mode = m === 'ai' ? 'ai' : m === 'hotseat' ? 'hotseat' : 'drill';
+};
+modeSelect.addEventListener('change', syncMode);
+syncMode();
 if (params.has('autostart')) start();
 
 function resize(): void {
