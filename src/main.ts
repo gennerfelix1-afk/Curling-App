@@ -1,7 +1,10 @@
 import { Game, type GameOptions } from './game/game';
 import { Controls } from './input/controls';
 import type { CurlAmount, Difficulty, IceSpeed } from './physics/config';
+import { Sound } from './audio/sound';
+import type { GameView } from './render/view';
 import { View2D } from './render/view2d';
+import { View3D } from './render/view3d';
 import './style.css';
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
@@ -17,15 +20,31 @@ function optionsFromMenu(): Partial<GameOptions> {
     hammer,
     difficulty,
     preview: difficulty === 'beginner',
+    delivery: value('opt-delivery') as 'meter' | 'gesture',
     ice: { speed: value('opt-ice') as IceSpeed, curl: value('opt-curl') as CurlAmount },
   };
 }
 
 let game = new Game({ seed: 1, hammer: 0 }); // placeholder behind the menu
-const view = new View2D(canvas);
-const controls = new Controls(game, view, canvas);
+/** 3D by default; `?view=2d` (or missing WebGL) falls back to the simple top-down canvas. */
+function createView(): GameView {
+  if (params.get('view') !== '2d') {
+    try {
+      return new View3D(canvas, document.getElementById('overlay')!);
+    } catch (err) {
+      console.warn('WebGL nicht verfügbar – 2D-Ansicht', err);
+    }
+  }
+  return new View2D(canvas);
+}
+const view = createView();
+const sound = new Sound();
+const controls = new Controls(game, view, canvas, sound);
+// touch devices default to the swipe delivery
+if (window.matchMedia('(pointer: coarse)').matches) (document.getElementById('opt-delivery') as HTMLSelectElement).value = 'gesture';
 
 function start(): void {
+  sound.start();
   game = new Game(optionsFromMenu());
   controls.game = game;
   document.body.dataset.menu = 'closed';
@@ -49,6 +68,7 @@ function frame(now: number): void {
   last = now;
   if (document.body.dataset.menu !== 'open') game.update(dt);
   view.draw(game, dt);
+  sound.update(game, dt);
   controls.refresh();
   requestAnimationFrame(frame);
 }

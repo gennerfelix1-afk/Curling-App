@@ -1,6 +1,9 @@
 import { RULES, SWEEP } from '../physics/config';
 import { TEAM_NAMES, type Game } from '../game/game';
-import type { View2D } from '../render/view2d';
+import type { Sound } from '../audio/sound';
+import type { CameraMode, GameView } from '../render/view';
+
+const CAMERA_LABEL: Record<CameraMode, string> = { auto: 'Kamera: Auto', top: 'Kamera: Draufsicht', sheet: 'Kamera: Übersicht' };
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -18,14 +21,33 @@ export class Controls {
   private boardKey = '';
   private decisionKey = '';
 
-  constructor(public game: Game, view: View2D, canvas: HTMLCanvasElement) {
+  private swipe: { id: number; x: number; y: number } | null = null;
+
+  constructor(public game: Game, private view: GameView, canvas: HTMLCanvasElement, private sound: Sound) {
     // aiming on the ice
     const aim = (e: PointerEvent): void => {
       const r = canvas.getBoundingClientRect();
       const p = view.toSheet(e.clientX - r.left, e.clientY - r.top);
-      this.game.setAim(p.x, p.y);
+      if (p) this.game.setAim(p.x, p.y);
+    };
+    // swipe gesture: drag the stone up the screen and let go before the hog line
+    const swipeMove = (e: PointerEvent): void => {
+      const sw = this.swipe;
+      if (!sw || e.pointerId !== sw.id) return;
+      const dy = sw.y - e.clientY;
+      const track = view.playHeight() * 0.62;
+      this.game.gestureMove(dy / track, dy > 20 ? (e.clientX - sw.x) / dy : 0);
     };
     canvas.addEventListener('pointerdown', (e) => {
+      if (this.game.phase === 'gesture') {
+        this.swipe = { id: e.pointerId, x: e.clientX, y: e.clientY };
+        try {
+          canvas.setPointerCapture(e.pointerId);
+        } catch {
+          /* pointer already gone */
+        }
+        return;
+      }
       if (this.game.phase !== 'aim') return;
       this.aimPointer = e.pointerId;
       aim(e);
@@ -37,9 +59,15 @@ export class Controls {
     });
     canvas.addEventListener('pointermove', (e) => {
       if (e.pointerId === this.aimPointer) aim(e);
+      swipeMove(e);
     });
     const end = (e: PointerEvent): void => {
       if (e.pointerId === this.aimPointer) this.aimPointer = -1;
+      if (this.swipe && e.pointerId === this.swipe.id) {
+        swipeMove(e);
+        this.swipe = null;
+        this.game.gestureRelease();
+      }
     };
     canvas.addEventListener('pointerup', end);
     canvas.addEventListener('pointercancel', end);
@@ -52,6 +80,11 @@ export class Controls {
     this.press('btn-go', () => this.game.tap());
     this.press('btn-continue', () => this.game.tap());
     this.press('btn-cancel', () => this.game.cancel());
+    this.press('btn-cancel-gesture', () => this.game.cancel());
+    this.press('btn-camera', () => this.cycleCamera());
+    this.press('btn-sound', () => {
+      this.sound.muted = !this.sound.muted;
+    });
     this.press('meter', () => this.game.tap());
     this.press('btn-side-l', () => this.game.setSweepSide(-1));
     this.press('btn-side-c', () => this.game.setSweepSide(0));
@@ -114,6 +147,16 @@ export class Controls {
         case 'Digit3':
           game.setSweepSide(1);
           break;
+        case 'KeyC':
+          this.cycleCamera();
+          break;
+        case 'KeyM':
+          this.sound.muted = !this.sound.muted;
+          break;
+        case 'F3':
+        case 'KeyB':
+          this.view.debug = !this.view.debug;
+          break;
         default:
           return;
       }
@@ -127,6 +170,11 @@ export class Controls {
     window.addEventListener('blur', () => {
       for (let k = 0; k < 3; k++) this.game.sweepUp(k);
     });
+  }
+
+  private cycleCamera(): void {
+    const order: CameraMode[] = ['auto', 'top', 'sheet'];
+    this.view.cameraMode = order[(order.indexOf(this.view.cameraMode) + 1) % order.length];
   }
 
   private press(id: string, fn: () => void): void {
@@ -230,6 +278,14 @@ export class Controls {
           .map((o) => `<button data-choice="${o.id}">${o.label}</button>`)
           .join('');
       }
+    }
+
+    $('btn-camera').textContent = CAMERA_LABEL[this.view.cameraMode];
+    $('btn-sound').textContent = this.sound.muted ? '🔇' : '🔊';
+
+    // swipe gesture: live pace indicator
+    if (phase === 'gesture') {
+      $('pace-marker').style.left = `${50 + g.gesturePace * 50}%`;
     }
 
     // meter

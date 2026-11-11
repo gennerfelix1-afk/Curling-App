@@ -204,6 +204,14 @@ export const EXECUTION = {
   lineError: { beginner: 0.2, club: 0.35, pro: 0.5 },
   /** Duration of the slide from the hack to the release point [s]. */
   slideTime: 2.2,
+  /** Gesture delivery: ideal duration of the swipe from the hack to the release point [s]. */
+  gestureTime: 1.3,
+  /** Gesture delivery: relative pace error that counts as full weight deviation. */
+  gesturePaceRange: 0.6,
+  /** Gesture delivery: sideways slope of the swipe that counts as full line deviation. */
+  gestureLineRange: 0.25,
+  /** Gesture delivery: swipes shorter than this share of the slide are cancelled. */
+  gestureMin: 0.3,
 } as const;
 
 export type Difficulty = keyof typeof EXECUTION.weightError;

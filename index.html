@@ -8,6 +8,11 @@
   </head>
   <body data-phase="aim" data-menu="open">
     <canvas id="view"></canvas>
+    <div id="overlay"></div>
+    <div id="tools">
+      <button id="btn-camera" title="Kamera wechseln (C)">Kamera: Auto</button>
+      <button id="btn-sound" title="Ton an/aus (M)">🔊</button>
+    </div>
 
     <div id="hud">
       <table id="scoreboard"></table>
@@ -41,6 +46,12 @@
       <button id="btn-cancel">Abbrechen</button>
     </div>
 
+    <div class="panel" id="panel-gesture">
+      <div id="gesture-title">Stein nach oben ziehen und vor der roten Hog Line loslassen – gleichmäßig im Tempo, gerade zum Besen</div>
+      <div id="pace"><div id="pace-marker"></div><span class="l">zu langsam</span><span class="r">zu schnell</span></div>
+      <button id="btn-cancel-gesture">Abbrechen</button>
+    </div>
+
     <div class="panel" id="panel-sweep">
       <button class="pad" id="pad-sweep-0"><span>Wischer 1 (A)</span><div class="fatigue"><i id="fatigue-0"></i></div></button>
       <div id="sides">
@@ -69,6 +80,7 @@
         <label>Eis <select id="opt-ice"><option value="keen">keen (schnell)</option><option value="normal" selected>normal</option><option value="heavy">heavy (langsam)</option></select></label>
         <label>Curl <select id="opt-curl"><option value="straight">straight</option><option value="normal" selected>normal</option><option value="swingy">swingy</option></select></label>
         <label>Schwierigkeit <select id="opt-difficulty"><option value="beginner">Anfänger (mit Vorschau-Linie)</option><option value="club">Club</option><option value="pro">Profi</option></select></label>
+        <label>Abgabe <select id="opt-delivery"><option value="meter">Timing-Anzeigen</option><option value="gesture">Wisch-Geste</option></select></label>
         <button id="btn-start">Partie starten</button>
         <p>2 Spieler am selben Gerät (Hot-Seat). KI-Gegner folgt.</p>
       </div>

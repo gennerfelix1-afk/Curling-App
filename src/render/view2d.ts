@@ -2,12 +2,20 @@ import { ICE, SHEET, STONE, SWEEP } from '../physics/config';
 import type { Game } from '../game/game';
 import { backLineY, farHogY, hackY, HALF_LENGTH, HALF_WIDTH, nearHogY, teeY, type Dir } from '../physics/sheet';
 import type { Stone } from '../physics/stone';
+import type { CameraMode, GameView } from './view';
 
 const TEAM_COLORS = ['#d62839', '#f2c230'];
 const TEAM_DARK = ['#8f1422', '#a67f0c'];
 
 /** Simple top-down canvas view with a camera that follows the play (phase 4). */
-export class View2D {
+export class View2D implements GameView {
+  cameraMode: CameraMode = 'auto';
+  debug = false;
+
+  playHeight(): number {
+    return this.h - this.top - this.bottom;
+  }
+
   private ctx: CanvasRenderingContext2D;
   private w = 0;
   private h = 0;
@@ -65,6 +73,7 @@ export class View2D {
     switch (game.phase) {
       case 'meterWeight':
       case 'meterLine':
+      case 'gesture':
       case 'slide':
         cy = hackY(d) + d * 5.5;
         len = 13;

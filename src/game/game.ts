@@ -25,6 +25,7 @@ export type Phase =
   | 'aim'
   | 'meterWeight'
   | 'meterLine'
+  | 'gesture'
   | 'slide'
   | 'running'
   | 'decision'
@@ -68,6 +69,8 @@ export interface GameOptions {
   hammer: 'coin' | 'lsd' | 0 | 1;
   /** Treat brush contact with a moving stone as a touched stone (R9). */
   touchRule: boolean;
+  /** Delivery mechanic: timing meters or a swipe gesture. */
+  delivery: 'meter' | 'gesture';
 }
 
 export const DEFAULT_GAME_OPTIONS: GameOptions = {
@@ -78,6 +81,7 @@ export const DEFAULT_GAME_OPTIONS: GameOptions = {
   ends: 8,
   hammer: 'coin',
   touchRule: true,
+  delivery: 'meter',
 };
 
 /** Live sweeping input of one sweeper. */
@@ -124,6 +128,11 @@ export class Game {
   /** Stone being delivered (during slide and running). */
   current: Stone | null = null;
   private slideT = 0;
+  /** Progress of the stone along the slide path: 0 = hack, 1 = near hog line. */
+  private slideU = 0;
+  private slideFrom = 0;
+  /** Swipe gesture state (phase 'gesture'). */
+  private gesture = { progress: 0, slope: 0, ticks: 0, started: false };
   private settleT = 0;
   private acc = 0;
 
@@ -243,6 +252,10 @@ export class Game {
   tap(): boolean {
     switch (this.phase) {
       case 'aim':
+        if (this.options.delivery === 'gesture') {
+          this.beginGesture();
+          return true;
+        }
         this.phase = 'meterWeight';
         this.meterTime = 0;
         this.meter = -1;
@@ -268,6 +281,130 @@ export class Game {
   /** Back to aiming before the stone leaves the hack. */
   cancel(): void {
     if (this.phase === 'meterWeight' || this.phase === 'meterLine') this.phase = 'aim';
+    if (this.phase === 'gesture') {
+      this.world.stones.pop();
+      this.current = null;
+      this.phase = 'aim';
+    }
+  }
+
+  // ───────────── swipe gesture delivery ─────────────
+
+  private beginGesture(): void {
+    this.beginSlide();
+    this.phase = 'gesture';
+    this.gesture = { progress: 0, slope: 0, ticks: 0, started: false };
+  }
+
+  /**
+   * Swipe input while the finger is down. `progress`: 0 = hack … 1 = near hog line (the stone
+   * follows the finger); `slope`: sideways drift of the swipe relative to its length.
+   */
+  gestureMove(progress: number, slope: number): void {
+    if (this.phase !== 'gesture') return;
+    const g = this.gesture;
+    g.progress = Math.max(g.progress, Math.max(0, progress)); // the stone only slides forward
+    g.slope = slope;
+    if (g.progress > 0.02) g.started = true;
+  }
+
+  /** Finger lifted: the stone is released (or the delivery is cancelled after a very short swipe). */
+  gestureRelease(): void {
+    if (this.phase !== 'gesture') return;
+    const g = this.gesture;
+    if (g.progress < EXECUTION.gestureMin) {
+      this.cancel();
+      return;
+    }
+    this.weightDev = this.gesturePace;
+    this.lineDev = Math.max(-1, Math.min(1, g.slope / EXECUTION.gestureLineRange));
+    this.slideU = g.progress;
+    if (g.progress >= this.releaseU) {
+      this.release(); // let go late: right where the stone is
+    } else {
+      // let go early: the stone glides on to the usual release point
+      this.slideFrom = g.progress;
+      this.slideT = 0;
+      this.phase = 'slide';
+    }
+  }
+
+  /**
+   * Pace of the running swipe relative to the ideal: -1 = far too slow, 0 = ideal, 1 = far too
+   * fast. This becomes the weight deviation at release.
+   */
+  get gesturePace(): number {
+    const g = this.gesture;
+    if (!g.started || g.ticks === 0) return 0;
+    const pace = g.progress / (g.ticks * DT);
+    const ideal = this.releaseU / EXECUTION.gestureTime;
+    return Math.max(-1, Math.min(1, (pace / ideal - 1) / EXECUTION.gesturePaceRange));
+  }
+
+  private tickGesture(): void {
+    const g = this.gesture;
+    if (g.started) g.ticks++;
+    this.slideU = g.progress;
+    this.placeSlidingStone();
+    if (g.progress >= 1) {
+      // R5: still holding the stone at the hog line
+      this.weightDev = 0;
+      this.lineDev = 0;
+      this.slideU = 1;
+      this.release();
+    }
+  }
+
+  /** Slide progress at the usual release point. */
+  private get releaseU(): number {
+    const y0 = hackY(this.dir) + this.dir * 0.4;
+    return (releaseY(this.dir) - y0) / (nearHogY(this.dir) - y0);
+  }
+
+  /** Aim point including the line error of the delivery. */
+  private get actualAimX(): number {
+    return this.aimX + this.lineDev * EXECUTION.lineError[this.options.difficulty];
+  }
+
+  /** Position the stone on the slide path (hack → aim line) according to slideU. */
+  private placeSlidingStone(): { x: number; y: number } {
+    const s = this.current!;
+    const y0 = hackY(this.dir) + this.dir * 0.4;
+    const y = y0 + (nearHogY(this.dir) - y0) * this.slideU;
+    const hy = hackY(this.dir);
+    const x = (this.actualAimX * (y - hy)) / (this.aimY - hy);
+    s.x = x;
+    s.y = y;
+    s.angle += (this.turn === 'cw' ? -1 : 1) * 0.85 * DT;
+    return { x, y };
+  }
+
+  /** The stone leaves the hand: from here on the physics takes over. */
+  private release(): void {
+    const s = this.current!;
+    const p = this.placeSlidingStone();
+    const diff = this.options.difficulty;
+    const speed = this.weight.speed * (1 + this.weightDev * EXECUTION.weightError[diff]);
+    const angle = s.angle;
+    this.world.stones.pop(); // replace the sliding dummy by the released stone
+    const released = deliverStone(this.world, this.stoneId(), this.team, {
+      dir: this.dir,
+      releaseX: p.x,
+      releaseYPos: p.y,
+      aimX: this.actualAimX,
+      aimY: this.aimY,
+      speed,
+      turn: this.turn,
+    });
+    released.angle = angle;
+    this.current = released;
+    this.phase = 'running';
+    if (releaseViolation(p.y, this.dir)) {
+      // R5: not released before the hog line at the delivery end
+      released.inPlay = false;
+      released.moving = false;
+      this.say('Hog-Line-Verletzung bei der Abgabe – Stein aus dem Spiel.');
+    }
   }
 
   /** Resolve a pending decision of the non-offending team. */
@@ -333,6 +470,9 @@ export class Game {
         this.meter = u < 0.5 ? -1 + 4 * u : 3 - 4 * u;
         break;
       }
+      case 'gesture':
+        this.tickGesture();
+        break;
       case 'slide':
         this.tickSlide();
         break;
@@ -359,6 +499,8 @@ export class Game {
   private beginSlide(): void {
     this.phase = 'slide';
     this.slideT = 0;
+    this.slideU = 0;
+    this.slideFrom = 0;
     // state before the delivery: needed to replace stones after a violation
     this.beforeShot = this.world.stones.filter((q) => q.inPlay).map(cloneStone);
     this.protectedNow = this.lsd ? [] : protectedStones(this.world.stones, this.team, this.dir, this.shot + 1);
@@ -377,41 +519,15 @@ export class Game {
   }
 
   private tickSlide(): void {
-    const s = this.current!;
     this.slideT += DT;
-    const u = Math.min(1, this.slideT / EXECUTION.slideTime);
+    const rel = this.releaseU;
+    const total = EXECUTION.slideTime * (1 - this.slideFrom / rel);
+    const u = Math.min(1, this.slideT / total);
     // ease-in: push out of the hack, then glide
-    const k = u * u * (3 - 2 * u) * 0.35 + u * 0.65;
-    const diff = this.options.difficulty;
-    const aimX = this.aimX + this.lineDev * EXECUTION.lineError[diff];
-    const rp = this.releasePoint(aimX);
-    const y0 = hackY(this.dir) + this.dir * 0.4;
-    s.x = rp.x * k;
-    s.y = y0 + (rp.y - y0) * k;
-    s.angle += (this.turn === 'cw' ? -1 : 1) * 0.85 * DT;
-    if (u >= 1) {
-      const speed = this.weight.speed * (1 + this.weightDev * EXECUTION.weightError[diff]);
-      const angle = s.angle;
-      // replace the sliding dummy by the released stone
-      this.world.stones.pop();
-      const released = deliverStone(this.world, this.stoneId(), this.team, {
-        dir: this.dir,
-        releaseX: rp.x,
-        aimX,
-        aimY: this.aimY,
-        speed,
-        turn: this.turn,
-      });
-      released.angle = angle;
-      this.current = released;
-      this.phase = 'running';
-      if (releaseViolation(rp.y, this.dir)) {
-        // R5: not released before the hog line at the delivery end
-        released.inPlay = false;
-        released.moving = false;
-        this.say('Hog-Line-Verletzung bei der Abgabe – Stein aus dem Spiel.');
-      }
-    }
+    const k = this.slideFrom > 0 ? u : u * u * (3 - 2 * u) * 0.35 + u * 0.65;
+    this.slideU = this.slideFrom + (rel - this.slideFrom) * k;
+    this.placeSlidingStone();
+    if (u >= 1) this.release();
   }
 
   private tickRunning(): void {

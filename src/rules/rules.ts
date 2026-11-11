@@ -72,7 +72,7 @@ export function hogLineShort(s: Stone, dir: Dir): boolean {
 
 /** R5: the stone must be released before it reaches the hog line at the delivery end. */
 export function releaseViolation(releaseYPos: number, dir: Dir): boolean {
-  return releaseYPos * dir > -(SHEET.teeToTee / 2 - SHEET.teeToHog);
+  return releaseYPos * dir >= -(SHEET.teeToTee / 2 - SHEET.teeToHog);
 }
 
 // ───────────── Scoring ─────────────

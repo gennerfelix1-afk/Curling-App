@@ -20,6 +20,8 @@ export interface DeliveryParams {
   turn: Turn;
   /** Rotation rate at release [rad/s], magnitude. */
   omega?: number;
+  /** Release point along the sheet (default: DELIVERY.releaseBeforeHog before the near hog line). */
+  releaseYPos?: number;
 }
 
 /** y coordinate of the release point. */
@@ -27,7 +29,7 @@ export const releaseY = (dir: Dir): number => nearHogY(dir) - dir * DELIVERY.rel
 
 /** Put a stone into its state at the moment of release. */
 export function deliverStone(world: World, id: number, team: number, p: DeliveryParams): Stone {
-  const y0 = releaseY(p.dir);
+  const y0 = p.releaseYPos ?? releaseY(p.dir);
   const dx = p.aimX - p.releaseX;
   const dy = p.aimY - y0;
   const d = Math.sqrt(dx * dx + dy * dy);
