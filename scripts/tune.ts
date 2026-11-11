@@ -5,7 +5,7 @@ import { deliverStone, releaseY, solveSpeedForDistance, solveSpeedForHogTime } f
 import { farHogY, nearHogY, teeY } from '../src/physics/sheet';
 import { DELIVERY } from '../src/physics/config';
 
-export function probe(ice: Ice, speed: number, omega = DELIVERY.omega, seed = 1, stopAtBack = false) {
+export function probe(ice: Ice, speed: number, omega: number = DELIVERY.omega, seed = 1) {
   const w = new World(ice, seed);
   w.mutateIce = false;
   w.boundaries = false;
