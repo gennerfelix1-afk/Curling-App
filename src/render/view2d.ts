@@ -78,8 +78,9 @@ export class View2D implements GameView {
         cy = hackY(d) + d * 5.5;
         len = 13;
         break;
+      case 'replay':
       case 'running': {
-        const s = game.current!;
+        const s = game.viewStone!;
         const along = s.y * d;
         const farHog = farHogY(d) * d;
         if (along > farHog - 3 || !s.inPlay) {
@@ -121,7 +122,7 @@ export class View2D implements GameView {
     this.drawHeat(game);
     this.drawPreview(game);
     this.drawBroom(game);
-    for (const s of game.world.stones) if (s.inPlay) this.drawStone(s);
+    for (const s of game.viewWorld.stones) if (s.inPlay) this.drawStone(s);
     this.drawMeasure(game);
     this.drawSweepers(game);
     this.drawMinimap(game);
@@ -182,7 +183,7 @@ export class View2D implements GameView {
 
   /** Sweep marks: cells that currently carry sweeping heat. */
   private drawHeat(game: Game): void {
-    const ice = game.ice;
+    const ice = game.viewIce;
     const ctx = this.ctx;
     const size = Math.ceil(ice.cell * this.scale) + 1;
     ctx.fillStyle = '#4aa3df';
@@ -271,7 +272,7 @@ export class View2D implements GameView {
     const ctx = this.ctx;
     const tx = this.sx(0);
     const ty = this.sy(teeY(game.dir));
-    const find = (id: number): Stone | undefined => game.world.stones.find((q) => q.id === id);
+    const find = (id: number): Stone | undefined => game.viewWorld.stones.find((q) => q.id === id);
     for (let i = 0; i < r.points; i++) {
       const s = find(r.ranking[i].id);
       if (!s) continue;
@@ -305,13 +306,13 @@ export class View2D implements GameView {
 
   private drawSweepers(game: Game): void {
     if (game.phase !== 'running') return;
-    const s = game.current;
+    const s = game.viewStone;
     if (!s || !s.moving) return;
     const ctx = this.ctx;
     const speed = Math.sqrt(s.vx * s.vx + s.vy * s.vy);
     if (speed < 0.01) return;
     const ang = Math.atan2(-this.dir * s.vy, this.dir * s.vx); // screen angle of travel
-    game.world.sweepers.state.forEach((sw, k) => {
+    game.viewWorld.sweepers.state.forEach((sw, k) => {
       if (k > 1 && !sw.down) return; // the other skip only appears while sweeping
       const active = game.sweepIntensity(k) > 0;
       const x = sw.down ? sw.x : s.x + (s.vx / speed) * (0.4 + k * 0.15) + (k ? 0.35 : -0.35) * (-s.vy / speed);
@@ -354,7 +355,7 @@ export class View2D implements GameView {
       ctx.fillStyle = '#c8202f';
       ctx.fillRect(x0, my(nearHogY(d)) - 0.5, mw, 1);
     }
-    for (const s of game.world.stones) {
+    for (const s of game.viewWorld.stones) {
       if (!s.inPlay) continue;
       ctx.beginPath();
       ctx.arc(mx(s.x), my(s.y), Math.max(2, STONE.radius * k * 1.6), 0, Math.PI * 2);

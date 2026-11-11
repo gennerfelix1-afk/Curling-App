@@ -82,6 +82,11 @@ export class Controls {
     this.press('btn-cancel', () => this.game.cancel());
     this.press('btn-cancel-gesture', () => this.game.cancel());
     this.press('btn-camera', () => this.cycleCamera());
+    this.press('btn-replay', () => this.game.startReplay(0));
+    this.press('btn-replay-slow', () => {
+      if (this.game.replay) this.game.replay.slow = !this.game.replay.slow;
+    });
+    this.press('btn-replay-stop', () => this.game.stopReplay());
     this.press('btn-sound', () => {
       this.sound.muted = !this.sound.muted;
     });
@@ -161,6 +166,10 @@ export class Controls {
           break;
         case 'KeyC':
           this.cycleCamera();
+          break;
+        case 'KeyR':
+          if (game.replay) game.stopReplay();
+          else game.startReplay(0);
           break;
         case 'KeyM':
           this.sound.muted = !this.sound.muted;
@@ -298,6 +307,12 @@ export class Controls {
     }
 
     $('btn-camera').textContent = CAMERA_LABEL[this.view.cameraMode];
+    const canReplay = g.history.length > 0 && (phase === 'aim' || phase === 'endScore' || phase === 'gameOver');
+    $('btn-replay').style.display = canReplay ? '' : 'none';
+    if (g.replay) {
+      $('replay-title').textContent = `Replay: ${g.replay.record.label}${g.replaySpeed < 1 ? ' · Zeitlupe' : ''}`;
+      $('btn-replay-slow').classList.toggle('on', g.replay.slow);
+    }
     $('btn-sound').textContent = this.sound.muted ? '🔇' : '🔊';
 
     // swipe gesture: live pace indicator
@@ -328,6 +343,7 @@ export class Controls {
     }
 
     // running
+    if (phase === 'replay') $('hud-speed').textContent = `${g.speed.toFixed(2)} m/s`;
     if (phase === 'running') {
       $('hud-speed').textContent = `${g.speed.toFixed(2)} m/s`;
       $('hud-call').textContent = g.call;
@@ -345,7 +361,7 @@ export class Controls {
       skip.textContent = `Skip ${TEAM_NAMES[1 - g.team]} wischt (L)`;
       skip.classList.toggle('on', g.sweeperActive(2));
     } else {
-      $('hud-speed').textContent = '';
+      if (phase !== 'replay') $('hud-speed').textContent = '';
       $('hud-call').textContent = '';
       $('pad-skip').style.display = 'none';
     }

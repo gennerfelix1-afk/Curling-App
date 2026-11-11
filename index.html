@@ -4,12 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#0b1d2a" />
+    <meta name="description" content="Realistisches Curling-Spiel: echte Stein-Physik, Wischen, komplette Regeln, KI-Gegner." />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Curling</title>
   </head>
   <body data-phase="aim" data-menu="open">
     <canvas id="view"></canvas>
     <div id="overlay"></div>
     <div id="tools">
+      <button id="btn-replay" title="Letzten Wurf wiederholen (R)">⟲ Replay</button>
       <button id="btn-camera" title="Kamera wechseln (C)">Kamera: Auto</button>
       <button id="btn-sound" title="Ton an/aus (M)">🔊</button>
     </div>
@@ -70,6 +77,11 @@
       <div class="hint">Deine Mitspieler wischen auf deine Ansage</div>
     </div>
     <div class="panel" id="panel-watch"><span id="watch-text"></span></div>
+    <div class="panel" id="panel-replay">
+      <span id="replay-title"></span>
+      <button id="btn-replay-slow">Zeitlupe</button>
+      <button id="btn-replay-stop">Beenden</button>
+    </div>
     <div class="panel" id="panel-think">
       <span id="think-text"></span>
       <div id="think"><div id="think-bar"></div></div>

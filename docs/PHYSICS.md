@@ -146,6 +146,7 @@ Gleicher Endpunkt (leichter geworfen + voll gewischt statt ungewischt): Curl 0,8
 - **Transzendente Funktionen** (`exp`, `tanh`, `sin`, `pow` …) können zwischen JS-Engines im letzten Bit abweichen. Der Physik-Kern verwendet deshalb im Zeitschritt ausschließlich `+ − × ÷` und `Math.sqrt` (IEEE-exakt); wo Sinus/Kosinus/Exponential nötig sind (Laufring-Punkte, Abklingkonstanten), kommen eigene Reihen aus `dmath.ts` zum Einsatz. Gauß-Zufall = Summe von 4 Gleichverteilungen. So sind Replays auch zwischen Browsern bitgleich.
 - Wisch-Eingaben werden pro Tick quantisiert (I in 1/64-Stufen) und mit dem Wurf gespeichert.
 - Test: gleicher Seed + gleiche Eingaben → identische Endpositionen (Bit-Vergleich), auch nach Kollisionsketten.
+- **Replays** nutzen genau das: Pro Wurf werden Eiszustand, Steinpositionen, Zufallszustand, Abgabeparameter und die Wisch-Eingaben pro Tick gespeichert; das Replay rechnet den Wurf neu und landet bitgleich (`tests/game/replay.test.ts`).
 
 ## 9. Kalibrierziele (automatisierte Tests, Phase 2/3)
 

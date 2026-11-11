@@ -63,4 +63,28 @@ Optional danach: Mixed Doubles (vorgesetzte Steine, Power Play), Thinking Time.
 - [x] Phase 5 – Regeln + Spielablauf: Ends, Wertung + Messung, Hammer/LSD, Hog Line, FGZ, No-Tick, Wischregeln, berührte Steine, Concede, Extra End, Scoreboard (110 Tests grün)
 - [x] Phase 6 – 3D-Ansicht (Three.js) mit Kamerafahrt, Wisch-Geste für die Abgabe, Sound, Debug-Overlay (118 Tests grün)
 - [x] Phase 7 – KI-Gegner (4 Stufen, Monte-Carlo über die echte Physik), Wisch-Berater, Wisch-Modi, Trainingsmodi – siehe docs/AI.md
-- [ ] Phase 8
+- [x] Phase 8 – Feinschliff: Replays mit Zeitlupe, PWA (offline, installierbar), adaptive Auflösung, Code-Splitting, Doku
+
+## Abnahmekriterien (Abschnitt 10 des Auftrags)
+
+| Kriterium | Stand | Nachweis |
+|---|---|---|
+| Kalibrierungstests aus 3.4 grün | ✅ | `tests/physics/calibration.test.ts` (K1–K9), `sweep.test.ts` (K10–K14), `collision.test.ts`, `determinism.test.ts` |
+| Draw ohne Wischen kürzer und mit mehr Curl als mit Wischen | ✅ | `sweep.test.ts` K10/K12; +2,6 m, Curl 70 % |
+| In-/Out-Turn entgegengesetzt, Curl setzt spät ein | ✅ | `calibration.test.ts` K6/K7 |
+| FGZ- und No-Tick-Verstöße erkannt und zurückgesetzt | ✅ | `tests/game/rules-flow.test.ts` |
+| Komplette 8-End-Partie gegen die KI ohne Fehler | ✅ automatisiert (KI gegen KI, `tests/ai/game-ai.test.ts`) · ⚠ von Hand auf echtem Handy/Desktop noch nicht durchgespielt | |
+| Anleitung im README | ✅ | Steuerung, Regeln in Kürze, Physik-Parameter |
+
+## Offene Punkte
+
+- **Regelwerk 2026 nicht im Original geprüft** (worldcurling.org war in der Entwicklungsumgebung gesperrt): Regelnummern
+  mit ⚠ in `RULES.md`; insbesondere die Folge eines No-Tick-Verstoßes (Wahl des Gegners vs. zwingende Rücksetzung).
+- **Echte Geräte:** Bildrate auf einem Mittelklasse-Handy, Gefühl der Wisch-Geste (`EXECUTION.gestureTime`) und Klang
+  wurden nur in einer emulierten Umgebung ohne Grafikkarte bzw. gar nicht geprüft. Die 3D-Ansicht senkt die Auflösung
+  automatisch, wenn das Gerät nicht mitkommt; `?view=2d` ist die Ausweichlösung.
+- **KI plant einen Zug voraus** (keine Antwort des Gegners in der Suche); Stärkeunterschiede der Stufen nicht vermessen.
+- **Replay** zeigt die reine Physik des Wurfs; ein Stein, der wegen einer Berührung vor der Hog Line entfernt wurde,
+  läuft im Replay weiter.
+- **Vereinfachungen:** keine Spielerfiguren; Wischer des abgebenden Teams wischen nur den abgegebenen Stein; Mixed
+  Doubles und Thinking Time (im Auftrag optional) sind nicht umgesetzt.

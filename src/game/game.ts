@@ -1,11 +1,11 @@
 import { DERIVED, EXECUTION, RULES, SHEET, STONE, type Difficulty } from '../physics/config';
-import { deliverStone, releaseY, type Turn } from '../physics/delivery';
+import { deliverStone, releaseY, type DeliveryParams, type Turn } from '../physics/delivery';
 import { Ice, type IceOptions } from '../physics/ice';
 import { Rng } from '../physics/rng';
 import { clearedFarHog, hackY, HALF_WIDTH, nearHogY, teeY, type Dir } from '../physics/sheet';
 import { cloneStone, createStone, type Stone } from '../physics/stone';
 import type { SweepCommand } from '../physics/sweep';
-import { World } from '../physics/world';
+import { World, type WorldSnapshot } from '../physics/world';
 import {
   applySweepRules,
   fgzRuling,
@@ -36,7 +36,35 @@ export type Phase =
   | 'decision'
   | 'settled'
   | 'endScore'
-  | 'gameOver';
+  | 'gameOver'
+  | 'replay';
+
+/** Everything needed to re-simulate a delivery exactly (deterministic replay). */
+export interface ShotRecord {
+  ice: Ice;
+  snapshot: WorldSnapshot;
+  params: DeliveryParams;
+  id: number;
+  team: number;
+  angle: number;
+  /** Sweeping input per tick, after the sweeping rules. */
+  sweep: (readonly (SweepCommand | null)[])[];
+  label: string;
+}
+
+export interface ReplayState {
+  record: ShotRecord;
+  world: World;
+  stone: Stone;
+  tick: number;
+  /** Ticks at which stones collide (slow motion around them). */
+  collisions: number[];
+  /** Slow motion forced by the viewer. */
+  slow: boolean;
+  /** Seconds since everything came to rest. */
+  restT: number;
+  returnPhase: Phase;
+}
 
 export const TEAM_NAMES = ['Rot', 'Gelb'] as const;
 
@@ -207,6 +235,13 @@ export class Game {
   private aiExec: { speed: number; aimOffset: number } | null = null;
   private advisor: SweepAdvisor | null = null;
   private decisionT = 0;
+
+  /** The last deliveries, newest last (for replays). */
+  readonly history: ShotRecord[] = [];
+  /** Replay in progress (phase 'replay'). */
+  replay: ReplayState | null = null;
+  private recording: ShotRecord | null = null;
+  private replayAcc = 0;
 
   private beforeShot: Stone[] = [];
   private protectedNow: ProtectedStone[] = [];
@@ -473,7 +508,7 @@ export class Game {
     this.advisor = new SweepAdvisor(this.shotTarget());
     this.advice = 'off';
     this.world.stones.pop(); // replace the sliding dummy by the released stone
-    const released = deliverStone(this.world, this.stoneId(), this.team, {
+    const params: DeliveryParams = {
       dir: this.dir,
       releaseX: p.x,
       releaseYPos: p.y,
@@ -481,7 +516,18 @@ export class Game {
       aimY: this.aimY,
       speed,
       turn: this.turn,
-    });
+    };
+    this.recording = {
+      ice: this.ice.clone(),
+      snapshot: this.world.snapshot(),
+      params,
+      id: this.stoneId(),
+      team: this.team,
+      angle,
+      sweep: [],
+      label: `${TEAM_NAMES[this.team]} · ${this.aiShot ? this.aiShot.label : this.weight.label}`,
+    };
+    const released = deliverStone(this.world, this.stoneId(), this.team, params);
     released.angle = angle;
     this.current = released;
     this.phase = 'running';
@@ -544,6 +590,10 @@ export class Game {
   /** Advance the game by real time; physics runs in fixed ticks. */
   update(seconds: number): void {
     this.messageAge += seconds;
+    if (this.phase === 'replay') {
+      this.updateReplay(seconds);
+      return;
+    }
     if (this.phase === 'aim' && this.isAI(this.team)) this.startThinking();
     if (this.phase === 'aiThink') {
       this.thinkT += seconds;
@@ -894,6 +944,93 @@ export class Game {
   private settle(): void {
     this.phase = 'settled';
     this.settleT = 0;
+    if (this.recording) {
+      this.recording.sweep = this.sweepLog.slice();
+      this.history.push(this.recording);
+      if (this.history.length > 3) this.history.shift();
+      this.recording = null;
+    }
+  }
+
+  // ───────────── replay ─────────────
+
+  private buildReplayWorld(rec: ShotRecord): { world: World; stone: Stone } {
+    const world = new World(rec.ice.clone(), 0);
+    world.restore(rec.snapshot);
+    const stone = deliverStone(world, rec.id, rec.team, rec.params);
+    stone.angle = rec.angle;
+    return { world, stone };
+  }
+
+  /** Replay one of the last deliveries (0 = the latest) by re-simulating it exactly. */
+  startReplay(back = 0): boolean {
+    const rec = this.history[this.history.length - 1 - back];
+    const ok = this.phase === 'aim' || this.phase === 'endScore' || this.phase === 'gameOver';
+    if (!rec || !ok) return false;
+    // a first silent run tells where the collisions are
+    const probe = this.buildReplayWorld(rec);
+    const collisions: number[] = [];
+    for (let i = 0; i < rec.sweep.length; i++) {
+      probe.world.step(rec.sweep[i]);
+      for (const e of probe.world.events) if (e.type === 'collision') collisions.push(e.tick);
+      probe.world.events.length = 0;
+    }
+    const { world, stone } = this.buildReplayWorld(rec);
+    this.replay = {
+      record: rec,
+      world,
+      stone,
+      tick: 0,
+      collisions,
+      slow: false,
+      restT: 0,
+      returnPhase: this.phase,
+    };
+    this.replayAcc = 0;
+    this.phase = 'replay';
+    return true;
+  }
+
+  stopReplay(): void {
+    if (!this.replay) return;
+    this.phase = this.replay.returnPhase;
+    this.replay = null;
+  }
+
+  /** Playback speed of the replay: slow motion around collisions or on request. */
+  get replaySpeed(): number {
+    const r = this.replay;
+    if (!r) return 1;
+    if (r.slow) return 0.25;
+    const t = r.world.tick;
+    for (const c of r.collisions) if (t > c - 70 && t < c + 170) return 0.2;
+    return 1;
+  }
+
+  private updateReplay(seconds: number): void {
+    const r = this.replay!;
+    if (r.tick >= r.record.sweep.length) {
+      r.restT += seconds;
+      if (r.restT > 1.5) this.stopReplay();
+      return;
+    }
+    this.replayAcc += Math.min(seconds, 0.25) * this.replaySpeed;
+    while (this.replayAcc >= DT && r.tick < r.record.sweep.length) {
+      this.replayAcc -= DT;
+      r.world.step(r.record.sweep[r.tick]);
+      r.tick++;
+    }
+  }
+
+  /** World, ice and stone to be shown: the replay while one is running, otherwise the game. */
+  get viewWorld(): World {
+    return this.replay ? this.replay.world : this.world;
+  }
+  get viewIce(): Ice {
+    return this.replay ? this.replay.world.ice : this.ice;
+  }
+  get viewStone(): Stone | null {
+    return this.replay ? this.replay.stone : this.current;
   }
 
   private nextStone(): void {
@@ -1042,8 +1179,8 @@ export class Game {
 
   /** Speed of the running stone [m/s]. */
   get speed(): number {
-    const s = this.current;
-    return s && this.phase === 'running' ? Math.sqrt(s.vx * s.vx + s.vy * s.vy) : 0;
+    const s = this.viewStone;
+    return s && (this.phase === 'running' || this.phase === 'replay') ? Math.sqrt(s.vx * s.vx + s.vy * s.vy) : 0;
   }
 
   /** The skip's call for the running stone ("HARD!", "Line!", "Clean", "Off!"). */

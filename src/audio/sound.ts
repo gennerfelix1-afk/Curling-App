@@ -109,25 +109,25 @@ export class Sound {
 
     // rumble: all moving stones
     let speed = 0;
-    for (const s of game.world.stones) {
+    for (const s of game.viewWorld.stones) {
       if (s.inPlay && s.moving) speed = Math.max(speed, Math.sqrt(s.vx * s.vx + s.vy * s.vy));
     }
-    if (game.phase !== 'running' && game.phase !== 'slide' && game.phase !== 'gesture') speed = 0;
-    else if (game.phase !== 'running') speed = 1.6; // sliding out of the hack
+    if (game.phase !== 'running' && game.phase !== 'replay' && game.phase !== 'slide' && game.phase !== 'gesture') speed = 0;
+    else if (game.phase === 'slide' || game.phase === 'gesture') speed = 1.6; // sliding out of the hack
     this.rumbleGain.gain.setTargetAtTime(Math.min(0.5, speed * 0.16), t, 0.08);
     this.rumbleFilter.frequency.setTargetAtTime(90 + speed * 150, t, 0.08);
 
     // sweeping: louder and faster strokes with intensity
     let sweep = 0;
-    if (game.phase === 'running') {
-      for (const sw of game.world.sweepers.state) if (sw.down) sweep = Math.max(sweep, sw.effective);
+    if (game.phase === 'running' || game.phase === 'replay') {
+      for (const sw of game.viewWorld.sweepers.state) if (sw.down) sweep = Math.max(sweep, sw.effective);
     }
     this.sweepPhase += dt * (5 + sweep * 9) * Math.PI * 2;
     const pulse = 0.55 + 0.45 * Math.sin(this.sweepPhase);
     this.sweepGain.gain.setTargetAtTime(sweep > 0 ? (0.05 + sweep * 0.22) * pulse : 0, t, 0.02);
 
     // collisions
-    const ev = game.world.events;
+    const ev = game.viewWorld.events;
     if (ev.length < this.eventCursor) this.eventCursor = 0;
     for (; this.eventCursor < ev.length; this.eventCursor++) {
       const e = ev[this.eventCursor];

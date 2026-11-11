@@ -98,3 +98,5 @@ body[data-phase='gesture'] #panel-gesture { display: flex; flex-direction: colum
 #pace-marker { position: absolute; top: -4px; bottom: -4px; width: 6px; margin-left: -3px; background: #fff; border-radius: 3px; box-shadow: 0 0 6px rgba(0, 0, 0, 0.7); }
 #pace span { position: absolute; top: 5px; font-size: 11px; color: #fff; text-shadow: 0 0 3px #000; }
 #pace .l { left: 6px; } #pace .r { right: 6px; }
+body[data-phase='replay'] #panel-replay { display: flex; }
+#replay-title { font-weight: 700; flex-basis: 100%; text-align: center; }

@@ -4,7 +4,6 @@ import type { CurlAmount, Difficulty, IceSpeed } from './physics/config';
 import { Sound } from './audio/sound';
 import type { GameView } from './render/view';
 import { View2D } from './render/view2d';
-import { View3D } from './render/view3d';
 import './style.css';
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
@@ -32,10 +31,11 @@ function optionsFromMenu(): Partial<GameOptions> {
 }
 
 let game = new Game({ seed: 1, hammer: 0 }); // placeholder behind the menu
-/** 3D by default; `?view=2d` (or missing WebGL) falls back to the simple top-down canvas. */
-function createView(): GameView {
+/** 3D by default (loaded as a separate chunk); `?view=2d` or missing WebGL → simple 2D canvas. */
+async function createView(): Promise<GameView> {
   if (params.get('view') !== '2d') {
     try {
+      const { View3D } = await import('./render/view3d');
       return new View3D(canvas, document.getElementById('overlay')!);
     } catch (err) {
       console.warn('WebGL nicht verfügbar – 2D-Ansicht', err);
@@ -43,7 +43,7 @@ function createView(): GameView {
   }
   return new View2D(canvas);
 }
-const view = createView();
+const view = await createView();
 const sound = new Sound();
 const controls = new Controls(game, view, canvas, sound);
 // touch devices default to the swipe delivery
@@ -86,3 +86,8 @@ function frame(now: number): void {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+// installable / offline (PWA): only in the production build
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => undefined);
+}

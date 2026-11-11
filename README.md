@@ -3,7 +3,7 @@
 Realistisches Curling-Spiel für den Browser (Desktop + Mobile). TypeScript, Vite, Three.js; deterministische
 Physik mit festem Zeitschritt (240 Hz), headless getestet mit Vitest.
 
-**Status:** Phase 7 (Partie gegen die KI oder zu zweit, Trainingsmodi, 3D-Ansicht, Sound) abgeschlossen – siehe [`docs/PLAN.md`](docs/PLAN.md).
+**Status:** Alle 8 Phasen umgesetzt – siehe [`docs/PLAN.md`](docs/PLAN.md) (mit Abnahme-Checkliste und offenen Punkten).
 
 ## Dokumentation
 - [`docs/PLAN.md`](docs/PLAN.md) – Architektur und Phasenplan
@@ -20,12 +20,30 @@ npm run build      # Typecheck + Produktions-Build nach dist/
 ```
 
 ## Physik-Parameter anpassen
-Alle Konstanten stehen zentral in [`src/physics/config.ts`](src/physics/config.ts). Nach Änderungen `npm test`
-ausführen – die Kalibrierungstests zeigen, ob die Zielwerte (Draw-Zeit, Curl, Wisch-Effekt …) noch passen.
+Alle Konstanten stehen zentral in [`src/physics/config.ts`](src/physics/config.ts), jeweils mit Einheit und Kommentar:
 
-## Deployment
-GitHub Actions baut bei jedem Push auf `main` und veröffentlicht auf GitHub Pages
-(Repository-Einstellung *Pages → Source: GitHub Actions* aktivieren).
+| Block | Inhalt |
+|---|---|
+| `SHEET`, `STONE` | Maße des Spielfelds und des Steins |
+| `FRICTION` | Reibung für keen / normal / heavy, Geschwindigkeitsabhängigkeit |
+| `CURL` | Curl-Stärke, später Curl, Abhängigkeit von der Drehung |
+| `ICE` | Raster, Zufallsvariation, Gefälle, Abnutzung, Wischwärme |
+| `SWEEP` | Besenfläche, Wärmeeintrag, Ermüdung |
+| `COLLISION` | Restitution und Reibung zwischen den Steinen |
+| `WEIGHTS`, `EXECUTION` | Gewichte in Curling-Sprache, Ausführungsfehler, Gesten-Tempo |
+| `RULES` | Regel-Parameter (FGZ, Mess-Schwelle, LSD) |
+
+Vorgehen: Wert ändern → `npm test` (die Kalibrierungstests in `tests/physics/` zeigen, ob Draw-Zeit, Curl,
+Wisch-Effekt usw. noch in den Zielbereichen liegen) → mit `npx vite-node scripts/tune.ts` bzw.
+`scripts/tune-sweep.ts` die Messwerte ansehen. Im Spiel zeigt `B` das Debug-Overlay. Die Stärke der KI steht in
+`AI_LEVELS` (`src/ai/planner.ts`).
+
+## Deployment und Installation
+- GitHub Actions (`.github/workflows/ci.yml`) prüft jeden Push: Typecheck, Tests, Build.
+- `.github/workflows/deploy.yml` baut bei jedem Push auf `main` und veröffentlicht auf GitHub Pages. Dafür einmalig
+  in den Repository-Einstellungen *Pages → Source: GitHub Actions* wählen.
+- Das Spiel ist eine **PWA**: Im Browser „Zum Startbildschirm hinzufügen“ bzw. „Installieren“ wählen. Nach dem ersten
+  Laden läuft es auch offline.
 
 ## Steuerung
 
@@ -45,6 +63,7 @@ Ablauf pro Stein: **Besen setzen → Drehung → Gewicht → Abgabe → Wischen*
 | Skip des anderen Teams wischt (ab Tee Line) | `L` halten | Button „Skip … wischt“ |
 | Ansage an die Mitspieler (Wisch-Modus „auf Ansage“): HARD / Clean / Off | `H` / `J` / `K` | Buttons |
 | Kamera: Auto → Draufsicht → Übersicht | `C` | Button „Kamera“ |
+| Replay des letzten Wurfs (Zeitlupe bei Kollisionen) | `R` | Button „⟲ Replay“ |
 | Ton an / aus | `M` | Lautsprecher-Button |
 | Debug-Overlay (Reibungsfeld, Geschwindigkeit, Drehung, vorhergesagte Bahn) | `B` oder `F3` | – |
 
@@ -89,4 +108,8 @@ Details mit Regelnummern: [`docs/RULES.md`](docs/RULES.md).
 - **Wischen:** selbst wischen, Mitspieler auf Ansage (HARD / Clean / Off) oder Mitspieler automatisch. Der Skip ruft
   bei jedem Stein „HARD!“, „Line!“, „Clean“ oder „Off!“ – als Anzeige und gesprochen.
 
-Replays und Feinschliff folgen in der letzten Phase.
+## Replay
+
+Nach jedem Wurf (wenn du am Zug bist oder das End gewertet wird) zeigt „⟲ Replay“ den letzten Wurf noch einmal. Das
+Replay ist keine Aufzeichnung, sondern eine exakte Neuberechnung aus Seed, Eiszustand und den Wisch-Eingaben pro Tick –
+möglich, weil die Physik deterministisch ist. Rund um Kollisionen läuft es automatisch in Zeitlupe.

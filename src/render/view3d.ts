@@ -59,6 +59,14 @@ export class View3D implements GameView {
   private heatData!: Uint8Array;
   private heatDirty: number[] = [];
   private heatMode = '';
+  private lastIce: unknown = null;
+  private heatFrame = 0;
+  private lastPreview: readonly number[] | null = null;
+  private lastResultKey = '';
+  /** Adaptive resolution: frame time average and current pixel ratio. */
+  private frameAvg = 16;
+  private pixelRatio = 1;
+  private slowFor = 0;
 
   private broom = new THREE.Group();
   private preview!: THREE.Line;
@@ -74,7 +82,9 @@ export class View3D implements GameView {
   private plane = new THREE.Plane(UP, 0);
 
   constructor(canvas: HTMLCanvasElement, overlay: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    // on high-density screens the pixel density already smooths the edges
+    const antialias = (window.devicePixelRatio || 1) < 2;
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias, powerPreference: 'high-performance' });
     this.renderer.setClearColor(0x0b1d2a);
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x9fb4c8, 1.6));
     const sun = new THREE.DirectionalLight(0xffffff, 1.4);
@@ -144,7 +154,7 @@ export class View3D implements GameView {
   /** Overlay texture on the ice: sweep marks, or the friction field in debug mode. */
   private ensureHeat(game: Game): void {
     if (this.heatTex) return;
-    const ice = game.ice;
+    const ice = game.viewIce;
     this.heatData = new Uint8Array(ice.nx * ice.ny * 4);
     this.heatTex = new THREE.DataTexture(this.heatData, ice.nx, ice.ny, THREE.RGBAFormat);
     this.heatTex.magFilter = THREE.LinearFilter;
@@ -164,7 +174,16 @@ export class View3D implements GameView {
 
   private updateHeat(game: Game): void {
     this.ensureHeat(game);
-    const ice = game.ice;
+    const ice = game.viewIce;
+    if (ice !== this.lastIce) {
+      // another ice object (replay ↔ game): repaint from scratch
+      this.lastIce = ice;
+      this.heatMode = '';
+      this.heatDirty.length = 0;
+    }
+    // uploading the texture is the expensive part: at most every other frame
+    this.heatFrame++;
+    if (this.heatFrame % 2 === 1 && this.heatMode !== '') return;
     const d = this.heatData;
     const mode = this.debug ? 'debug' : 'heat';
     let changed = false;
@@ -280,7 +299,8 @@ export class View3D implements GameView {
   resize(width: number, height: number): void {
     this.w = width;
     this.h = height;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    if (this.pixelRatio === 1 && this.frameAvg === 16) this.pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.setSize(width, height, false);
     const c = this.renderer.domElement;
     c.style.width = `${width}px`;
@@ -310,13 +330,13 @@ export class View3D implements GameView {
       tgt.copy(V(0, cy, 0));
       pos.copy(V(0, cy - d * hgt * 0.12, hgt));
     };
-    const s = game.current;
+    const s = game.viewStone;
     let mode: 'house' | 'delivery' | 'follow' | 'sheet' = 'house';
     if (this.cameraMode === 'sheet') mode = 'sheet';
     else if (this.cameraMode === 'auto') {
       const ph = game.phase;
       if (ph === 'meterWeight' || ph === 'meterLine' || ph === 'gesture' || ph === 'slide') mode = 'delivery';
-      else if (ph === 'running' && s && s.inPlay && s.y * d < farHogY(d) * d - 1.5) mode = 'follow';
+      else if ((ph === 'running' || ph === 'replay') && s && s.inPlay && s.y * d < farHogY(d) * d - 1.5) mode = 'follow';
     }
     switch (mode) {
       case 'delivery': {
@@ -376,13 +396,26 @@ export class View3D implements GameView {
 
   // ───────────── per-frame ─────────────
 
+  /** Lower the render resolution when the device cannot keep up (keeps the game fluid on phones). */
+  private adaptResolution(dt: number): void {
+    this.frameAvg += (dt * 1000 - this.frameAvg) * 0.05;
+    this.slowFor = this.frameAvg > 24 ? this.slowFor + dt : 0;
+    if (this.slowFor > 2 && this.pixelRatio > 1) {
+      this.pixelRatio = Math.max(1, this.pixelRatio - 0.5);
+      this.slowFor = 0;
+      this.frameAvg = 17;
+      this.resize(this.w, this.h);
+    }
+  }
+
   draw(game: Game, dt: number): void {
+    this.adaptResolution(dt);
     this.updateCamera(game, dt);
     this.updateHeat(game);
 
     // stones
     let n = 0;
-    for (const s of game.world.stones) {
+    for (const s of game.viewWorld.stones) {
       if (!s.inPlay) continue;
       const m = this.stoneMesh(n++);
       m.group.visible = m.shadow.visible = true;
@@ -395,12 +428,15 @@ export class View3D implements GameView {
     for (; n < this.stones.length; n++) this.stones[n].group.visible = this.stones[n].shadow.visible = false;
 
     // broom and preview
-    const aiming = game.phase !== 'endScore' && game.phase !== 'gameOver';
+    const aiming = game.phase !== 'endScore' && game.phase !== 'gameOver' && game.phase !== 'replay';
     this.broom.visible = aiming;
     this.broom.position.set(game.aimX, 0, -game.aimY);
     const p = game.preview();
     this.preview.visible = p.length >= 4;
-    if (this.preview.visible) this.setLine(this.preview, p, 0.012);
+    if (this.preview.visible && p !== this.lastPreview) {
+      this.lastPreview = p;
+      this.setLine(this.preview, p, 0.012);
+    }
 
     this.drawSweepers(game);
     this.drawResult(game);
@@ -429,12 +465,12 @@ export class View3D implements GameView {
   }
 
   private drawSweepers(game: Game): void {
-    const s = game.current;
+    const s = game.viewStone;
     const speed = s ? Math.sqrt(s.vx * s.vx + s.vy * s.vy) : 0;
-    const show = game.phase === 'running' && !!s && s.inPlay && speed > 0.01;
+    const show = (game.phase === 'running' || game.phase === 'replay') && !!s && s.inPlay && speed > 0.01;
     const now = performance.now();
     this.brushes.forEach((g, k) => {
-      const sw = game.world.sweepers.state[k];
+      const sw = game.viewWorld.sweepers.state[k];
       g.visible = show && (k < 2 || sw.down);
       if (!g.visible || !s) return;
       const fx = s.vx / speed;
@@ -460,7 +496,7 @@ export class View3D implements GameView {
   /** End result: rings around the counting stones, measuring lines and distance labels. */
   private drawResult(game: Game): void {
     const r = game.phase === 'endScore' ? game.endResult : null;
-    const find = (id: number): Stone | undefined => game.world.stones.find((q) => q.id === id);
+    const find = (id: number): Stone | undefined => game.viewWorld.stones.find((q) => q.id === id);
     let n = 0;
     const seg: number[] = [];
     let html = '';
@@ -486,24 +522,28 @@ export class View3D implements GameView {
       }
     }
     for (; n < this.rings.length; n++) this.rings[n].visible = false;
-    this.measureLines.geometry.dispose();
-    this.measureLines.geometry = new THREE.BufferGeometry();
-    this.measureLines.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(seg), 3));
+    const key = seg.join();
+    if (key !== this.lastResultKey) {
+      this.lastResultKey = key;
+      this.measureLines.geometry.dispose();
+      this.measureLines.geometry = new THREE.BufferGeometry();
+      this.measureLines.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(seg), 3));
+    }
     if (this.labels.innerHTML !== html) this.labels.innerHTML = html;
   }
 
   /** Debug overlay: friction field, velocity arrow, predicted path, numbers. */
   private drawDebug(game: Game, dt: number): void {
-    const s = game.current;
+    const s = game.viewStone;
     const on = this.debug;
     this.debugBox.style.display = on ? '' : 'none';
-    const moving = on && game.phase === 'running' && !!s && s.inPlay && s.moving;
+    const moving = on && (game.phase === 'running' || game.phase === 'replay') && !!s && s.inPlay && s.moving;
     this.arrow.visible = moving;
     this.predicted.visible = moving;
     this.predictAge = on ? this.predictAge + dt : 99;
     if (!on) return;
     if (this.predictAge > 0.3) this.predictAge = 0;
-    const ice = game.ice;
+    const ice = game.viewIce;
     let text = `Eis μ0 ${ice.mu0.toFixed(5)}  Curl ×${ice.curlScale.toFixed(2)}  warme Zellen ${ice.hotCount}\n`;
     if (s && moving) {
       const speed = Math.sqrt(s.vx * s.vx + s.vy * s.vy);
@@ -515,7 +555,7 @@ export class View3D implements GameView {
         const w = new World(ice, 1);
         w.mutateIce = false;
         w.dir = game.dir;
-        for (const q of game.world.stones) if (q.inPlay) w.addStone({ ...q });
+        for (const q of game.viewWorld.stones) if (q.inPlay) w.addStone({ ...q });
         const me = w.getStone(s.id)!;
         const path = [me.x, me.y];
         while (!w.isAtRest() && w.tick < 240 * 60) {
@@ -525,7 +565,7 @@ export class View3D implements GameView {
         path.push(me.x, me.y);
         this.setLine(this.predicted, path, 0.014);
       }
-      const sw = game.world.sweepers.state;
+      const sw = game.viewWorld.sweepers.state;
       text +=
         `v ${speed.toFixed(3)} m/s  ω ${s.omega.toFixed(3)} rad/s  Umdr. ${(Math.abs(s.angle) / (2 * Math.PI)).toFixed(2)}\n` +
         `Pos x ${s.x.toFixed(3)}  y ${s.y.toFixed(3)}  Rest zum Tee ${((teeY(game.dir) - s.y) * game.dir).toFixed(2)} m\n` +
