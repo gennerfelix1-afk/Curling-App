@@ -68,13 +68,15 @@ describe('AI opponent in the game', () => {
     expect(g.world.getStone(8)!.x).toBe(0.05);
   }, 60000);
 
-  it('a complete 8-end match AI vs AI runs without errors', () => {
+  it('a complete 8-end match AI vs AI runs without errors', async () => {
     const g = new Game({ seed: 77, players: ['ai', 'ai'], aiLevel: 0, ends: 8, hammer: 'coin' });
     let shots = 0;
     let lastShot = -1;
     let lastEnd = 0;
     const kinds = new Set<string>();
     for (let t = 0; t < 400000 && g.phase !== 'gameOver'; t++) {
+      // hand control back to the test runner regularly – the match takes about two minutes
+      if (t % 200 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
       if (g.phase === 'endScore') g.tap();
       g.update(0.2);
       if (g.aiShot) kinds.add(g.aiShot.kind);
