@@ -19,6 +19,7 @@
       <button id="btn-replay" title="Letzten Wurf wiederholen (R)">⟲ Replay</button>
       <button id="btn-camera" title="Kamera wechseln (C)">Kamera: Auto</button>
       <button id="btn-sound" title="Ton an/aus (M)">🔊</button>
+      <button id="btn-pause" title="Pause (P)">☰</button>
     </div>
 
     <div id="hud">
@@ -102,25 +103,86 @@
     </div>
 
     <div id="menu">
-      <div class="card">
-        <h1>Curling</h1>
-        <label>Modus <select id="opt-mode">
-          <option value="ai">Gegen die KI</option>
-          <option value="hotseat">2 Spieler (Hot-Seat)</option>
-          <option value="draw">Training: Draw-Challenge</option>
-          <option value="takeout">Training: Takeout-Challenge</option>
-          <option value="ice">Training: Eis lesen</option>
-        </select></label>
-        <label class="ai-only">KI-Stärke <select id="opt-ai"><option value="0">Anfänger</option><option value="1" selected>Club</option><option value="2">Profi</option><option value="3">Weltklasse</option></select></label>
-        <label>Wischen <select id="opt-sweep"><option value="manual">selbst wischen</option><option value="calls">Mitspieler auf Ansage</option><option value="auto">Mitspieler automatisch</option></select></label>
-        <label class="match-only">Ends <select id="opt-ends"><option value="8">8</option><option value="10">10</option></select></label>
-        <label class="match-only">Hammer im 1. End <select id="opt-hammer"><option value="coin">Münzwurf</option><option value="lsd">Last Stone Draw</option></select></label>
-        <label>Eis <select id="opt-ice"><option value="keen">keen (schnell)</option><option value="normal" selected>normal</option><option value="heavy">heavy (langsam)</option></select></label>
-        <label>Curl <select id="opt-curl"><option value="straight">straight</option><option value="normal" selected>normal</option><option value="swingy">swingy</option></select></label>
-        <label>Schwierigkeit <select id="opt-difficulty"><option value="beginner">Anfänger (mit Vorschau-Linie)</option><option value="club">Club</option><option value="pro">Profi</option></select></label>
-        <label>Abgabe <select id="opt-delivery"><option value="push">Abstoßen, gleiten, loslassen</option><option value="meter">Timing-Anzeigen</option><option value="gesture">Wisch-Geste</option></select></label>
-        <button id="btn-start">Partie starten</button>
-        <p>Du spielst Rot. Im Training zählen 8 Versuche.</p>
+      <div class="screen" id="screen-home">
+        <div class="logo"><img class="logo-mark" src="./icon.svg" alt="" width="96" height="96" /><h1>Curling</h1><p class="tag">Echte Stein-Physik. Wischen. Taktik.</p></div>
+        <button class="big primary" id="btn-play-ai"><b>Spielen</b><small id="play-ai-sub"></small></button>
+        <button class="big" id="btn-play-2p"><b>2 Spieler</b><small>abwechselnd an einem Gerät</small></button>
+        <button class="big" id="btn-training"><b>Training</b><small>Draw, Takeout, Eis lesen</small></button>
+        <div class="row">
+          <button id="btn-howto">Anleitung</button>
+          <button id="btn-settings">Einstellungen</button>
+        </div>
+        <div id="stats"></div>
+        <a class="legal" href="./privacy.html" target="_blank" rel="noopener">Datenschutz</a>
+      </div>
+
+      <div class="screen" id="screen-training">
+        <h2>Training</h2>
+        <button class="big" data-drill="draw"><b>Draw-Challenge</b><small>8 Draws auf den Button – wie nah kommst du?</small></button>
+        <button class="big" data-drill="takeout"><b>Takeout-Challenge</b><small>Stein aus dem House schlagen, eigenen Stein halten</small></button>
+        <button class="big" data-drill="ice"><b>Eis lesen</b><small>Unbekanntes Eis ohne Hilfslinie</small></button>
+        <button class="back">Zurück</button>
+      </div>
+
+      <div class="screen" id="screen-settings">
+        <h2>Einstellungen</h2>
+        <div class="card">
+          <h3>Partie</h3>
+          <label>Gegner <select id="opt-ai"><option value="0">Anfänger</option><option value="1" selected>Club</option><option value="2">Profi</option><option value="3">Weltklasse</option></select></label>
+          <label>Ends <select id="opt-ends"><option value="4">4 (kurz)</option><option value="8" selected>8</option><option value="10">10</option></select></label>
+          <label>Hammer im 1. End <select id="opt-hammer"><option value="coin">Münzwurf</option><option value="lsd">Last Stone Draw</option></select></label>
+          <label>Eis <select id="opt-ice"><option value="keen">schnell (keen)</option><option value="normal" selected>normal</option><option value="heavy">langsam (heavy)</option></select></label>
+          <label>Curl <select id="opt-curl"><option value="straight">wenig (straight)</option><option value="normal" selected>normal</option><option value="swingy">viel (swingy)</option></select></label>
+          <h3>Steuerung</h3>
+          <label>Schwierigkeit <select id="opt-difficulty"><option value="beginner">Anfänger (mit Hilfslinie)</option><option value="club">Club</option><option value="pro">Profi</option></select></label>
+          <label>Abgabe <select id="opt-delivery"><option value="push">Abstoßen, gleiten, loslassen</option><option value="meter">Timing-Anzeigen</option><option value="gesture">Wisch-Geste</option></select></label>
+          <label>Wischen <select id="opt-sweep"><option value="manual">selbst wischen</option><option value="calls">Mitspieler auf Ansage</option><option value="auto">Mitspieler automatisch</option></select></label>
+          <h3>Gerät</h3>
+          <label>Ton <select id="opt-sound"><option value="on">an</option><option value="off">aus</option></select></label>
+          <label>Skip-Rufe sprechen <select id="opt-voice"><option value="on">an</option><option value="off">aus</option></select></label>
+          <label>Vibration <select id="opt-haptics"><option value="on">an</option><option value="off">aus</option></select></label>
+          <label>Sprache <select id="opt-lang"><option value="de">Deutsch</option><option value="en">English</option></select></label>
+        </div>
+        <button class="back">Zurück</button>
+      </div>
+
+      <div class="screen" id="screen-howto">
+        <h2>Anleitung</h2>
+        <div class="card" id="howto-list"></div>
+        <button class="back">Zurück</button>
+      </div>
+      <select id="opt-mode" hidden><option value="ai">ai</option><option value="hotseat">hotseat</option><option value="draw">draw</option><option value="takeout">takeout</option><option value="ice">ice</option></select>
+      <button id="btn-start" hidden></button>
+    </div>
+
+    <div class="overlay" id="pause">
+      <div class="sheet">
+        <h2>Pause</h2>
+        <button class="big primary" id="btn-resume"><b>Weiter</b></button>
+        <button class="big" id="btn-restart"><b>Neu starten</b></button>
+        <button class="big" id="btn-quit"><b>Hauptmenü</b></button>
+        <div class="row">
+          <button id="btn-pause-sound"></button>
+          <button id="btn-pause-haptics"></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="overlay" id="tip">
+      <div class="sheet">
+        <h2 id="tip-title"></h2>
+        <p id="tip-text"></p>
+        <button class="big primary" id="btn-tip-ok"><b>Verstanden</b></button>
+        <button id="btn-tip-skip">Tipps ausschalten</button>
+      </div>
+    </div>
+
+    <div class="overlay" id="summary">
+      <div class="sheet">
+        <h2 id="summary-title"></h2>
+        <div id="summary-body"></div>
+        <button class="big primary" id="btn-again"><b>Nochmal</b></button>
+        <button class="big" id="btn-home"><b>Hauptmenü</b></button>
       </div>
     </div>
 

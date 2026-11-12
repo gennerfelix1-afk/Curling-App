@@ -9,6 +9,7 @@ Physik mit festem Zeitschritt (240 Hz), headless getestet mit Vitest.
 - [`docs/PLAN.md`](docs/PLAN.md) – Architektur und Phasenplan
 - [`docs/RULES.md`](docs/RULES.md) – umgesetzte Regeln (World Curling, Ausgabe 1.9.2026) mit Regelnummern
 - [`docs/PHYSICS.md`](docs/PHYSICS.md) – Physikmodell, Formeln, Parameter, Kalibrierziele
+- [`docs/RELEASE.md`](docs/RELEASE.md) – Veröffentlichung: Checkliste, Store-Texte, offene Entscheidungen
 - [`docs/AI.md`](docs/AI.md) – KI-Gegner, Wisch-Berater (Skip-Rufe), Spiel- und Trainingsmodi
 
 ## Entwicklung

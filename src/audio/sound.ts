@@ -18,6 +18,9 @@ export class Sound {
   private lastCall = '';
   private lastCallTime = 0;
   private sweepPhase = 0;
+  private clap: AudioBuffer | null = null;
+  private crowdGain!: GainNode;
+  private crackleGain!: GainNode;
 
   /** Must be called from a user gesture (browser autoplay policy). */
   start(): void {
@@ -45,6 +48,26 @@ export class Sound {
     this.rumbleGain = ctx.createGain();
     this.rumbleGain.gain.value = 0;
     rumble.connect(this.rumbleFilter).connect(this.rumbleGain).connect(this.master);
+
+    // pebble crackle on top of the rumble: a narrow band that follows the speed
+    const crackle = this.loop();
+    const cb = ctx.createBiquadFilter();
+    cb.type = 'bandpass';
+    cb.frequency.value = 950;
+    cb.Q.value = 3;
+    this.crackleGain = ctx.createGain();
+    this.crackleGain.gain.value = 0;
+    crackle.connect(cb).connect(this.crackleGain).connect(this.master);
+
+    // the hall: a quiet murmur of the crowd
+    const crowd = this.loop();
+    const cl = ctx.createBiquadFilter();
+    cl.type = 'bandpass';
+    cl.frequency.value = 420;
+    cl.Q.value = 0.5;
+    this.crowdGain = ctx.createGain();
+    this.crowdGain.gain.value = 0;
+    crowd.connect(cl).connect(this.crowdGain).connect(this.master);
 
     // brushes: band-passed noise, pulsed with the stroke rate
     const sweep = this.loop();
@@ -122,6 +145,35 @@ export class Sound {
     for (let i = 0; i < Math.min(points + 1, notes.length); i++) this.blip(notes[i], t + i * 0.11, 0.45, 0.22);
   }
 
+  /** Applause of the crowd (end scored for the player, match won): many claps, synthesised once. */
+  applause(strength = 1): void {
+    const ctx = this.ctx;
+    if (!ctx || this.muted) return;
+    if (!this.clap) {
+      const len = Math.floor(ctx.sampleRate * 3.2);
+      this.clap = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = this.clap.getChannelData(0);
+      // a few hundred individual claps: short noise bursts, densest at the beginning
+      for (let n = 0; n < 520; n++) {
+        const u = Math.random();
+        const at = Math.floor(u * u * (len - 2000));
+        const amp = (0.25 + Math.random() * 0.75) * (1 - (at / len) * 0.8);
+        const dur = 300 + Math.floor(Math.random() * 500);
+        for (let i = 0; i < dur; i++) d[at + i] += (Math.random() * 2 - 1) * amp * Math.exp(-i / (dur * 0.22)) * 0.16;
+      }
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = this.clap;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1700;
+    bp.Q.value = 0.6;
+    const g = ctx.createGain();
+    g.gain.value = 0.55 * strength;
+    src.connect(bp).connect(g).connect(this.master);
+    src.start();
+  }
+
   private say(text: string): void {
     if (!this.voice || !('speechSynthesis' in window)) return;
     const u = new SpeechSynthesisUtterance(text.replace('!', ''));
@@ -149,6 +201,9 @@ export class Sound {
     else if (game.phase !== 'running' && game.phase !== 'replay') speed = 1.6; // sliding out of the hack
     this.rumbleGain.gain.setTargetAtTime(Math.min(0.5, speed * 0.16), t, 0.08);
     this.rumbleFilter.frequency.setTargetAtTime(90 + speed * 150, t, 0.08);
+    this.crackleGain.gain.setTargetAtTime(Math.min(0.09, speed * 0.03), t, 0.08);
+    // murmur, a little louder while a stone is running
+    this.crowdGain.gain.setTargetAtTime(0.035 + Math.min(0.03, speed * 0.012), t, 0.6);
 
     // sweeping: louder and faster strokes with intensity
     let sweep = 0;
