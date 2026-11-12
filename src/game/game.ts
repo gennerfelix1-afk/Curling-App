@@ -209,6 +209,8 @@ export class Game {
     { hold: false, boost: 0 },
   ];
   sweepSide: -1 | 0 | 1 = 0;
+  /** Sweeping input from the rubbing gesture. */
+  readonly scrub: { intensity: number; side: -1 | 0 | 1 } = { intensity: 0, side: 0 };
   /** Recorded sweeping input of the current shot, one entry per tick. */
   readonly sweepLog: (readonly (SweepCommand | null)[])[] = [];
 
@@ -704,7 +706,17 @@ export class Game {
   /** Current intensity of a sweeper's input, 0…1. */
   sweepIntensity(sweeper: number): number {
     const s = this.sweepInput[sweeper];
-    return s.hold ? Math.min(1, HOLD_INTENSITY + s.boost) : 0;
+    const pad = s.hold ? Math.min(1, HOLD_INTENSITY + s.boost) : 0;
+    return sweeper < 2 ? Math.max(pad, this.scrub.intensity) : pad;
+  }
+
+  /**
+   * Sweeping by rubbing the ice in front of the stone: both sweepers work at the given intensity
+   * (0…1, from the speed of the rubbing) on the given side of the path.
+   */
+  setScrub(intensity: number, side: -1 | 0 | 1 = 0): void {
+    this.scrub.intensity = Math.max(0, Math.min(1, intensity));
+    this.scrub.side = side;
   }
 
   // ───────────── simulation ─────────────
@@ -901,7 +913,8 @@ export class Game {
         if (mode === 'manual') i = this.sweepIntensity(k);
         else i = CALL_INTENSITY[mode === 'auto' ? this.advice : this.sweepCall];
         if (i > 0) {
-          raw[k] = { stoneId: s.id, intensity: i, side: mode === 'manual' ? this.sweepSide : 0 };
+          const side = mode !== 'manual' ? 0 : this.scrub.intensity > 0 ? this.scrub.side : this.sweepSide;
+          raw[k] = { stoneId: s.id, intensity: i, side };
           any = true;
         }
       }
@@ -921,6 +934,7 @@ export class Game {
     this.world.step(cmds);
     this.scanEvents();
     if (this.world.isAtRest()) {
+      this.scrub.intensity = 0;
       for (const inp of this.sweepInput) inp.boost = 0;
       this.onRest();
     }

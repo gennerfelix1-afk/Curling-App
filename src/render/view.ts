@@ -10,6 +10,8 @@ export interface GameView {
   toSheet(px: number, py: number): { x: number; y: number } | null;
   /** Height of the area in which the play is shown [px] (between HUD and control panel). */
   playHeight(): number;
+  /** Visual effect for a stone–stone impact at a point on the ice (strength 0…1). */
+  impact?(x: number, y: number, strength: number): void;
   cameraMode: CameraMode;
   debug: boolean;
 }

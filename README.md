@@ -61,9 +61,8 @@ Ablauf pro Stein: **Besen setzen → Drehung → Gewicht → Abgabe → Wischen*
 | Alternative Abgabe „Timing-Anzeigen“ (im Menü) | `Leertaste` / `Enter` (3×) | „Abgabe“, dann 2× auf die Anzeige tippen |
 | Abgabe per Wisch-Geste (im Menü wählbar, Standard auf Touch-Geräten) | „Abgabe“, dann mit der Maus nach oben ziehen und loslassen | „Abgabe“, dann nach oben wischen und loslassen |
 | Abbrechen (vor dem Abstoß) | `Esc` | „Abbrechen“ |
-| Wischer 1 / Wischer 2 | `A` / `D` halten | linkes / rechtes Feld halten |
-| härter wischen | Taste schnell wiederholt drücken | Feld schnell tippen |
-| Wischseite links / mittig / rechts | `1` / `2` / `3` | Buttons zwischen den Feldern |
+| Wischen | `A` / `D` halten (Wischer 1 / 2), schnell wiederholt drücken = härter; oder mit der Maus reiben | mit dem Finger auf dem Eis hin und her reiben – schneller = härter |
+| Wischseite links / mittig / rechts | `1` / `2` / `3` | im linken / mittleren / rechten Drittel des Bildschirms reiben |
 | Skip des anderen Teams wischt (ab Tee Line) | `L` halten | Button „Skip … wischt“ |
 | Ansage an die Mitspieler (Wisch-Modus „auf Ansage“): HARD / Clean / Off | `H` / `J` / `K` | Buttons |
 | Kamera: Auto → Draufsicht → Übersicht | `C` | Button „Kamera“ |
@@ -81,7 +80,11 @@ Ablauf pro Stein: **Besen setzen → Drehung → Gewicht → Abgabe → Wischen*
   Wer an der roten Hog Line noch nicht losgelassen hat, verliert den Stein (Hog-Line-Verletzung).
 - **Timing-Anzeigen:** Die beiden Anzeigen bei der Abgabe bestimmen den Ausführungsfehler: je näher an der Mitte gestoppt, desto genauer
   stimmen Gewicht und Linie.
-- Halten = lockeres Wischen (60 %), schnelles Tippen steigert bis 100 %. Hartes Dauerwischen ermüdet (Balken im Feld).
+- **Wischen durch Reiben:** Ein Finger steuert beide Wischer. Etwa eine Bildschirmbreite pro Sekunde ist volle
+  Intensität; hartes Dauerwischen ermüdet (Balken „Kraft der Wischer“). Jeder Strich ist als kurze Vibration spürbar
+  (Android; iPhones erlauben im Browser keine Vibration).
+- **Spielgefühl:** Zeitlupe, Eis-Spritzer und Kamera-Wackeln bei harten Treffern, Vibration bei Abstoßen, Loslassen
+  und Treffern, Punkte-Einblendung mit Ton am Ende jedes Ends.
 - Die gestrichelte Linie zeigt den geschätzten Weg **ohne** Wischen (Anfänger-Hilfe).
 - `?seed=123` in der URL legt Eis und Zufall fest (reproduzierbare Partie); `?view=2d` schaltet auf die einfache
   2D-Draufsicht (auch automatisch, wenn WebGL fehlt).

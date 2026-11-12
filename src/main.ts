@@ -2,6 +2,7 @@ import { Game, type DrillKind, type GameOptions } from './game/game';
 import { Controls } from './input/controls';
 import type { CurlAmount, Difficulty, IceSpeed } from './physics/config';
 import { Sound } from './audio/sound';
+import { Fx } from './render/fx';
 import type { GameView } from './render/view';
 import { View2D } from './render/view2d';
 import './style.css';
@@ -45,6 +46,7 @@ async function createView(): Promise<GameView> {
 }
 const view = await createView();
 const sound = new Sound();
+const fx = new Fx();
 const controls = new Controls(game, view, canvas, sound);
 function start(): void {
   sound.start();
@@ -76,7 +78,10 @@ let last = performance.now();
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  if (document.body.dataset.menu !== 'open') game.update(dt);
+  if (document.body.dataset.menu !== 'open') {
+    fx.update(game, view, dt);
+    game.update(dt * fx.timeScale); // brief slow motion on big hits
+  }
   view.draw(game, dt);
   sound.update(game, dt);
   controls.refresh();
