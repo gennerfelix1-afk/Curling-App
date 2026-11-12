@@ -8,5 +8,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    // many tests simulate whole deliveries; shared CI runners are 2–3× slower than a desktop
+    testTimeout: 30000,
   },
 });
