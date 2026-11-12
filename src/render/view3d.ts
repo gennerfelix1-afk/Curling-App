@@ -4,6 +4,8 @@ import { ICE, SHEET, STONE, SWEEP } from '../physics/config';
 import { backLineY, farHogY, hackY, HALF_LENGTH, HALF_WIDTH, nearHogY, teeY, type Dir } from '../physics/sheet';
 import type { Stone } from '../physics/stone';
 import { World } from '../physics/world';
+import { buildArena, graniteMap, setupEnvironment, type Arena } from './arena';
+import { Crew, type BrushPose } from './figures';
 import type { CameraMode, GameView } from './view';
 
 const TEAM_COLORS = [0xd62839, 0xf2c230];
@@ -14,10 +16,13 @@ const UP = new THREE.Vector3(0, 1, 0);
 const V = (x: number, y: number, h = 0): THREE.Vector3 => new THREE.Vector3(x, h, -y);
 
 function flat(geo: THREE.BufferGeometry, color: number, h: number, opacity = 1): THREE.Mesh {
-  const m = new THREE.Mesh(
-    geo,
-    new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity, depthWrite: false }),
-  );
+  // opaque markings lie "in the ice": glossy like it and able to receive the stones' shadows
+  const mat =
+    opacity < 1
+      ? new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
+      : new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0, envMapIntensity: 0.35, depthWrite: false });
+  const m = new THREE.Mesh(geo, mat);
+  m.receiveShadow = opacity >= 1;
   m.rotation.x = -Math.PI / 2;
   m.position.y = h;
   m.renderOrder = Math.round(h * 10000);
@@ -51,6 +56,16 @@ export class View3D implements GameView {
   private camPos = new THREE.Vector3(0, 12, 0);
   private camTarget = new THREE.Vector3();
   private camInit = false;
+  private sun!: THREE.DirectionalLight;
+  private arena!: Arena;
+  /** Shadows and spectators are switched off when the device cannot keep up. */
+  private detailOn = true;
+  private crew!: Crew;
+  private brushPose: BrushPose[] = [];
+  /** The camera currently looks straight down at the house. */
+  private topView = true;
+  /** `?quality=high` keeps all detail regardless of the frame rate (for screenshots / strong devices). */
+  private pinQuality = new URLSearchParams(location.search).get('quality') === 'high';
 
   private stones: StoneMesh[] = [];
   private stoneGeo!: { body: THREE.BufferGeometry; cap: THREE.BufferGeometry; handle: THREE.BufferGeometry; grip: THREE.BufferGeometry };
@@ -95,11 +110,28 @@ export class View3D implements GameView {
     // on high-density screens the pixel density already smooths the edges
     const antialias = (window.devicePixelRatio || 1) < 2;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias, powerPreference: 'high-performance' });
-    this.renderer.setClearColor(0x0b1d2a);
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x9fb4c8, 1.6));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.4);
-    sun.position.set(3, 10, 4);
-    this.scene.add(sun);
+    this.renderer.setClearColor(0x0a1620);
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.95;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    setupEnvironment(this.renderer, this.scene);
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8fa6ba, 0.8));
+    // hall lights from above; the shadow area follows the camera target
+    this.sun = new THREE.DirectionalLight(0xffffff, 1.3);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(1024, 1024);
+    const sc = this.sun.shadow.camera;
+    sc.left = sc.bottom = -7;
+    sc.right = sc.top = 7;
+    sc.near = 1;
+    sc.far = 30;
+    this.sun.shadow.bias = -0.0015;
+    this.scene.add(this.sun, this.sun.target);
+    this.arena = buildArena(this.scene);
+    this.granite.map = graniteMap();
+    this.granite.color.setHex(0xffffff);
+    this.crew = new Crew(this.scene);
     this.buildSheet();
     this.buildStoneGeometry();
     this.buildMarkers();
@@ -115,15 +147,7 @@ export class View3D implements GameView {
 
   private buildSheet(): void {
     const sc = this.scene;
-    // arena floor and ice
-    const floor = flat(new THREE.PlaneGeometry(60, 90), 0x0d2231, -0.02);
-    sc.add(floor);
-    const ice = new THREE.Mesh(
-      new THREE.PlaneGeometry(SHEET.width, SHEET.length),
-      new THREE.MeshStandardMaterial({ color: 0xeaf3f9, roughness: 0.35, metalness: 0 }),
-    );
-    ice.rotation.x = -Math.PI / 2;
-    sc.add(ice);
+    // ice, hall and stands come from the arena; here: the markings of the playing sheet
 
     const ringColors = [0x1c64b0, 0xeaf3f9, 0xc8202f, 0xeaf3f9];
     for (const d of [1, -1] as Dir[]) {
@@ -258,7 +282,8 @@ export class View3D implements GameView {
       const grip = new THREE.Mesh(this.stoneGeo.grip, this.capMats[0]);
       grip.position.set(0.018, 0.175, 0);
       group.add(body, cap, post, grip);
-      const shadow = flat(new THREE.CircleGeometry(STONE.radius * 1.12, 24), 0x000000, 0.0045, 0.22);
+      for (const part of group.children) part.castShadow = true;
+      const shadow = flat(new THREE.CircleGeometry(STONE.radius * 1.1, 24), 0x000000, 0.0045, 0.16);
       this.scene.add(group, shadow);
       this.stones.push({ group, cap, shadow });
     }
@@ -355,13 +380,15 @@ export class View3D implements GameView {
       if (ph === 'meterWeight' || ph === 'meterLine' || ph === 'gesture' || ph === 'charge' || ph === 'glide' || ph === 'slide') mode = 'delivery';
       else if ((ph === 'running' || ph === 'replay') && s && s.inPlay && s.y * d < farHogY(d) * d - 1.5) mode = 'follow';
     }
+    this.topView = mode === 'house';
     switch (mode) {
       case 'delivery': {
         const sy = s ? s.y : hackY(d);
         const sx = s ? s.x : 0;
         // tall (portrait) screens look down more steeply so the ice fills the view
         const tall = this.w / this.playHeight() < 1;
-        pos.copy(V(sx * 0.5, sy - d * (tall ? 4.6 : 3.2), tall ? 3.6 : 1.8));
+        // a little to the side and above, so the thrower does not hide the stone
+        pos.copy(V(sx * 0.5 + d * (tall ? 0.7 : 1.0), sy - d * (tall ? 4.8 : 3.4), tall ? 3.8 : 2.1));
         tgt.copy(V(sx, sy + d * (tall ? 3.6 : 8), 0));
         break;
       }
@@ -392,6 +419,8 @@ export class View3D implements GameView {
     }
     this.camera.aspect = this.w / this.playHeight();
     this.camera.updateProjectionMatrix();
+    this.sun.target.position.set(this.camTarget.x, 0, this.camTarget.z);
+    this.sun.position.set(this.camTarget.x + 2.5, 14, this.camTarget.z + 3);
     this.camera.position.copy(this.camPos);
     if (this.shake > 0.001) {
       this.camera.position.x += (Math.random() - 0.5) * this.shake;
@@ -464,6 +493,13 @@ export class View3D implements GameView {
       this.slowFor = 0;
       this.frameAvg = 17;
       this.resize(this.w, this.h);
+    } else if (this.slowFor > 2 && this.detailOn && !this.pinQuality) {
+      // still too slow at the lowest resolution: no shadows, no spectators
+      this.detailOn = false;
+      this.sun.castShadow = false;
+      for (const o of this.arena.detail) o.visible = false;
+      this.slowFor = 0;
+      this.frameAvg = 17;
     }
   }
 
@@ -511,6 +547,7 @@ export class View3D implements GameView {
 
     this.updateSparks(dt);
     this.drawSweepers(game);
+    this.crew.update(game, dt, this.brushPose, this.topView, this.camPos);
     this.drawResult(game);
     this.drawDebug(game, dt);
 
@@ -544,6 +581,8 @@ export class View3D implements GameView {
     this.brushes.forEach((g, k) => {
       const sw = game.viewWorld.sweepers.state[k];
       g.visible = show && (k < 2 || sw.down);
+      const bp = (this.brushPose[k] ??= { x: 0, y: 0, fx: 0, fy: 1, visible: false, down: false, effective: 0 });
+      bp.visible = g.visible;
       if (!g.visible || !s) return;
       const fx = s.vx / speed;
       const fy = s.vy / speed;
@@ -562,6 +601,12 @@ export class View3D implements GameView {
       }
       g.position.set(x, sw.down ? 0 : 0.12, -y);
       g.rotation.y = Math.atan2(fx, fy) + Math.PI;
+      bp.x = x;
+      bp.y = y;
+      bp.fx = fx;
+      bp.fy = fy;
+      bp.down = sw.down;
+      bp.effective = sw.effective;
     });
   }
 

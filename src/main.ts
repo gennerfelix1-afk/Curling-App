@@ -5,16 +5,16 @@ import { Sound } from './audio/sound';
 import { Fx } from './render/fx';
 import type { GameView } from './render/view';
 import { View2D } from './render/view2d';
+import { Shell, type Mode } from './ui/shell';
 import './style.css';
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const params = new URLSearchParams(location.search);
 const value = (id: string): string => (document.getElementById(id) as HTMLSelectElement).value;
 
-function optionsFromMenu(): Partial<GameOptions> {
+function optionsFromMenu(mode: string): Partial<GameOptions> {
   const difficulty = value('opt-difficulty') as Difficulty;
   const hammer = value('opt-hammer') as 'coin' | 'lsd';
-  const mode = value('opt-mode');
   const drill = mode === 'draw' || mode === 'takeout' || mode === 'ice' ? (mode as DrillKind) : null;
   return {
     players: mode === 'ai' ? ['human', 'ai'] : ['human', 'human'],
@@ -26,7 +26,7 @@ function optionsFromMenu(): Partial<GameOptions> {
     hammer,
     difficulty,
     preview: difficulty === 'beginner',
-    delivery: value('opt-delivery') as 'meter' | 'gesture',
+    delivery: value('opt-delivery') as 'push' | 'meter' | 'gesture',
     ice: { speed: value('opt-ice') as IceSpeed, curl: value('opt-curl') as CurlAmount },
   };
 }
@@ -48,25 +48,17 @@ const view = await createView();
 const sound = new Sound();
 const fx = new Fx();
 const controls = new Controls(game, view, canvas, sound);
-function start(): void {
+function start(mode: Mode | string): void {
   sound.start();
-  game = new Game(optionsFromMenu());
+  game = new Game(optionsFromMenu(mode));
   controls.game = game;
   document.body.dataset.menu = 'closed';
+  document.body.dataset.mode = mode === 'ai' ? 'ai' : mode === 'hotseat' ? 'hotseat' : 'drill';
   (window as unknown as { game: Game }).game = game;
 }
-document.getElementById('btn-start')!.addEventListener('click', start);
-document.getElementById('btn-continue')!.addEventListener('click', () => {
-  if (game.phase === 'gameOver') document.body.dataset.menu = 'open';
-});
-const modeSelect = document.getElementById('opt-mode') as HTMLSelectElement;
-const syncMode = (): void => {
-  const m = modeSelect.value;
-  document.body.dataset.mode = m === 'ai' ? 'ai' : m === 'hotseat' ? 'hotseat' : 'drill';
-};
-modeSelect.addEventListener('change', syncMode);
-syncMode();
-if (params.has('autostart')) start();
+const shell = new Shell(sound, start);
+// automation / deep links: ?autostart=ai|hotseat|draw|takeout|ice
+if (params.has('autostart')) start(params.get('autostart') || 'ai');
 
 function resize(): void {
   view.resize(window.innerWidth, window.innerHeight);
@@ -78,7 +70,9 @@ let last = performance.now();
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  if (document.body.dataset.menu !== 'open') {
+  shell.update(game, dt);
+  shell.syncSound();
+  if (!shell.blocking) {
     fx.update(game, view, dt);
     game.update(dt * fx.timeScale); // brief slow motion on big hits
   }

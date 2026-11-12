@@ -9,6 +9,7 @@ Physik mit festem Zeitschritt (240 Hz), headless getestet mit Vitest.
 - [`docs/PLAN.md`](docs/PLAN.md) – Architektur und Phasenplan
 - [`docs/RULES.md`](docs/RULES.md) – umgesetzte Regeln (World Curling, Ausgabe 1.9.2026) mit Regelnummern
 - [`docs/PHYSICS.md`](docs/PHYSICS.md) – Physikmodell, Formeln, Parameter, Kalibrierziele
+- [`docs/RELEASE.md`](docs/RELEASE.md) – Veröffentlichung: Checkliste, Store-Texte, offene Entscheidungen
 - [`docs/AI.md`](docs/AI.md) – KI-Gegner, Wisch-Berater (Skip-Rufe), Spiel- und Trainingsmodi
 
 ## Entwicklung
@@ -86,6 +87,12 @@ Ablauf pro Stein: **Besen setzen → Drehung → Gewicht → Abgabe → Wischen*
 - **Spielgefühl:** Zeitlupe, Eis-Spritzer und Kamera-Wackeln bei harten Treffern, Vibration bei Abstoßen, Loslassen
   und Treffern, Punkte-Einblendung mit Ton am Ende jedes Ends.
 - Die gestrichelte Linie zeigt den geschätzten Weg **ohne** Wischen (Anfänger-Hilfe).
+- **Spielerfiguren:** Werfer (Hocke im Hack, Abgabe-Ausfallschritt), zwei Wischer mit Lauf- und Wischbewegung, der
+  Skip am Besen und der Skip des Gegners – einfache Gelenkfiguren, im Code erzeugt und animiert. In der Draufsicht
+  aufs House werden sie ausgeblendet, damit sie keine Steine verdecken.
+- **Halle:** Eis, Granit, Tribüne mit Zuschauern, Banner und Hallenlicht werden komplett im Code erzeugt (keine
+  Grafikdateien). Kommt das Gerät nicht mit, senkt die Ansicht erst die Auflösung und schaltet dann Schatten und
+  Zuschauer ab; `?quality=high` erzwingt alle Details.
 - `?seed=123` in der URL legt Eis und Zufall fest (reproduzierbare Partie); `?view=2d` schaltet auf die einfache
   2D-Draufsicht (auch automatisch, wenn WebGL fehlt).
 
