@@ -5,6 +5,7 @@ import { backLineY, farHogY, hackY, HALF_LENGTH, HALF_WIDTH, nearHogY, teeY, typ
 import type { Stone } from '../physics/stone';
 import { World } from '../physics/world';
 import { buildArena, graniteMap, setupEnvironment, type Arena } from './arena';
+import { Crew, type BrushPose } from './figures';
 import type { CameraMode, GameView } from './view';
 
 const TEAM_COLORS = [0xd62839, 0xf2c230];
@@ -59,6 +60,10 @@ export class View3D implements GameView {
   private arena!: Arena;
   /** Shadows and spectators are switched off when the device cannot keep up. */
   private detailOn = true;
+  private crew!: Crew;
+  private brushPose: BrushPose[] = [];
+  /** The camera currently looks straight down at the house. */
+  private topView = true;
   /** `?quality=high` keeps all detail regardless of the frame rate (for screenshots / strong devices). */
   private pinQuality = new URLSearchParams(location.search).get('quality') === 'high';
 
@@ -126,6 +131,7 @@ export class View3D implements GameView {
     this.arena = buildArena(this.scene);
     this.granite.map = graniteMap();
     this.granite.color.setHex(0xffffff);
+    this.crew = new Crew(this.scene);
     this.buildSheet();
     this.buildStoneGeometry();
     this.buildMarkers();
@@ -374,13 +380,15 @@ export class View3D implements GameView {
       if (ph === 'meterWeight' || ph === 'meterLine' || ph === 'gesture' || ph === 'charge' || ph === 'glide' || ph === 'slide') mode = 'delivery';
       else if ((ph === 'running' || ph === 'replay') && s && s.inPlay && s.y * d < farHogY(d) * d - 1.5) mode = 'follow';
     }
+    this.topView = mode === 'house';
     switch (mode) {
       case 'delivery': {
         const sy = s ? s.y : hackY(d);
         const sx = s ? s.x : 0;
         // tall (portrait) screens look down more steeply so the ice fills the view
         const tall = this.w / this.playHeight() < 1;
-        pos.copy(V(sx * 0.5, sy - d * (tall ? 4.6 : 3.2), tall ? 3.6 : 1.8));
+        // a little to the side and above, so the thrower does not hide the stone
+        pos.copy(V(sx * 0.5 + d * (tall ? 0.7 : 1.0), sy - d * (tall ? 4.8 : 3.4), tall ? 3.8 : 2.1));
         tgt.copy(V(sx, sy + d * (tall ? 3.6 : 8), 0));
         break;
       }
@@ -539,6 +547,7 @@ export class View3D implements GameView {
 
     this.updateSparks(dt);
     this.drawSweepers(game);
+    this.crew.update(game, dt, this.brushPose, this.topView, this.camPos);
     this.drawResult(game);
     this.drawDebug(game, dt);
 
@@ -572,6 +581,8 @@ export class View3D implements GameView {
     this.brushes.forEach((g, k) => {
       const sw = game.viewWorld.sweepers.state[k];
       g.visible = show && (k < 2 || sw.down);
+      const bp = (this.brushPose[k] ??= { x: 0, y: 0, fx: 0, fy: 1, visible: false, down: false, effective: 0 });
+      bp.visible = g.visible;
       if (!g.visible || !s) return;
       const fx = s.vx / speed;
       const fy = s.vy / speed;
@@ -590,6 +601,12 @@ export class View3D implements GameView {
       }
       g.position.set(x, sw.down ? 0 : 0.12, -y);
       g.rotation.y = Math.atan2(fx, fy) + Math.PI;
+      bp.x = x;
+      bp.y = y;
+      bp.fx = fx;
+      bp.fy = fy;
+      bp.down = sw.down;
+      bp.effective = sw.effective;
     });
   }
 
