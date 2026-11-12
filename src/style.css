@@ -100,3 +100,18 @@ body[data-phase='gesture'] #panel-gesture { display: flex; flex-direction: colum
 #pace .l { left: 6px; } #pace .r { right: 6px; }
 body[data-phase='replay'] #panel-replay { display: flex; }
 #replay-title { font-weight: 700; flex-basis: 100%; text-align: center; }
+body[data-phase='charge'] #panel-push, body[data-phase='glide'] #panel-push { display: flex; flex-direction: column; pointer-events: none; }
+#panel-push button { pointer-events: auto; }
+body[data-phase='glide'] #btn-cancel-push, body[data-phase='charge'] #line-gauge, body[data-phase='glide'] #power { display: none; }
+#push-title { font-weight: 600; text-align: center; font-size: 14px; }
+#power-label { font-size: 26px; font-weight: 800; min-height: 32px; }
+#power { position: relative; width: min(94vw, 520px); height: 30px; margin-bottom: 18px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); }
+#power-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 8px; background: #4aa3df; }
+#power-target { position: absolute; top: -6px; bottom: -6px; width: 4px; margin-left: -2px; background: #fff; border-radius: 2px; box-shadow: 0 0 6px #000; }
+#power-ticks i { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255, 255, 255, 0.35); }
+#power-ticks span { position: absolute; top: 33px; transform: translateX(-50%); font-size: 11px; opacity: 0.85; white-space: nowrap; }
+#line-gauge { position: relative; width: min(94vw, 520px); height: 34px; border-radius: 8px; border: 1px solid var(--line);
+  background: linear-gradient(90deg, #a3262f 0%, #d6a31f 30%, #2f9e5b 46%, #2f9e5b 54%, #d6a31f 70%, #a3262f 100%); }
+#line-marker { position: absolute; top: -5px; bottom: -5px; width: 8px; margin-left: -4px; background: #fff; border-radius: 4px; box-shadow: 0 0 6px rgba(0, 0, 0, 0.8); }
+#line-gauge span { position: absolute; top: 9px; font-size: 11px; color: #fff; text-shadow: 0 0 3px #000; }
+#line-gauge .l { left: 6px; } #line-gauge .r { right: 6px; }

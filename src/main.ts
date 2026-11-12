@@ -46,9 +46,6 @@ async function createView(): Promise<GameView> {
 const view = await createView();
 const sound = new Sound();
 const controls = new Controls(game, view, canvas, sound);
-// touch devices default to the swipe delivery
-if (window.matchMedia('(pointer: coarse)').matches) (document.getElementById('opt-delivery') as HTMLSelectElement).value = 'gesture';
-
 function start(): void {
   sound.start();
   game = new Game(optionsFromMenu());

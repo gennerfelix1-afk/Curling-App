@@ -204,6 +204,12 @@ export const EXECUTION = {
   lineError: { beginner: 0.2, club: 0.35, pro: 0.5 },
   /** Duration of the slide from the hack to the release point [s]. */
   slideTime: 2.2,
+  /** Push delivery: seconds of holding to go from the lightest to the heaviest weight. */
+  chargeTime: { beginner: 3.6, club: 3.0, pro: 2.5 },
+  /** Push delivery: seconds the stone glides from the hack to the near hog line. */
+  glideTime: 3.0,
+  /** Push delivery: how far the slide wanders off the line without steering (share of lineError). */
+  wander: { beginner: 0.6, club: 0.85, pro: 1.0 },
   /** Gesture delivery: ideal duration of the swipe from the hack to the release point [s]. */
   gestureTime: 1.3,
   /** Gesture delivery: relative pace error that counts as full weight deviation. */

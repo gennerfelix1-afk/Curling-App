@@ -53,6 +53,14 @@
       <button id="btn-cancel">Abbrechen</button>
     </div>
 
+    <div class="panel" id="panel-push">
+      <div id="push-title"></div>
+      <div id="power-label"></div>
+      <div id="power"><div id="power-fill"></div><div id="power-target"></div><div id="power-ticks"></div></div>
+      <div id="line-gauge"><div id="line-marker"></div><span class="l">◀ zu weit links</span><span class="r">zu weit rechts ▶</span></div>
+      <button id="btn-cancel-push">Abbrechen</button>
+    </div>
+
     <div class="panel" id="panel-gesture">
       <div id="gesture-title">Stein nach oben ziehen und vor der roten Hog Line loslassen – gleichmäßig im Tempo, gerade zum Besen</div>
       <div id="pace"><div id="pace-marker"></div><span class="l">zu langsam</span><span class="r">zu schnell</span></div>
@@ -113,7 +121,7 @@
         <label>Eis <select id="opt-ice"><option value="keen">keen (schnell)</option><option value="normal" selected>normal</option><option value="heavy">heavy (langsam)</option></select></label>
         <label>Curl <select id="opt-curl"><option value="straight">straight</option><option value="normal" selected>normal</option><option value="swingy">swingy</option></select></label>
         <label>Schwierigkeit <select id="opt-difficulty"><option value="beginner">Anfänger (mit Vorschau-Linie)</option><option value="club">Club</option><option value="pro">Profi</option></select></label>
-        <label>Abgabe <select id="opt-delivery"><option value="meter">Timing-Anzeigen</option><option value="gesture">Wisch-Geste</option></select></label>
+        <label>Abgabe <select id="opt-delivery"><option value="push">Abstoßen, gleiten, loslassen</option><option value="meter">Timing-Anzeigen</option><option value="gesture">Wisch-Geste</option></select></label>
         <button id="btn-start">Partie starten</button>
         <p>Du spielst Rot. Im Training zählen 8 Versuche.</p>
       </div>

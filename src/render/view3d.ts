@@ -45,6 +45,8 @@ export class View3D implements GameView {
   private h = 1;
   private top = 96;
   private bottom = 150;
+  /** Taller control panel while delivering (power scale / line gauge). */
+  private readonly bottomDelivery = 235;
 
   private camPos = new THREE.Vector3(0, 12, 0);
   private camTarget = new THREE.Vector3();
@@ -71,6 +73,8 @@ export class View3D implements GameView {
   private broom = new THREE.Group();
   private preview!: THREE.Line;
   private predicted!: THREE.Line;
+  private aimLine!: THREE.Line;
+  private aimKey = '';
   private brushes: THREE.Group[] = [];
   private rings: THREE.Mesh[] = [];
   private measureLines!: THREE.LineSegments;
@@ -272,7 +276,9 @@ export class View3D implements GameView {
     this.predicted.renderOrder = 81;
     this.measureLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x111111, depthTest: false }));
     this.measureLines.renderOrder = 82;
-    this.scene.add(this.preview, this.predicted, this.measureLines, this.arrow);
+    this.aimLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x0a7d3b, depthTest: false }));
+    this.aimLine.renderOrder = 79;
+    this.scene.add(this.preview, this.predicted, this.aimLine, this.measureLines, this.arrow);
 
     // brushes: 0, 1 = sweepers, 2 = the other team's skip
     for (let k = 0; k < SWEEP.sweepers; k++) {
@@ -335,7 +341,7 @@ export class View3D implements GameView {
     if (this.cameraMode === 'sheet') mode = 'sheet';
     else if (this.cameraMode === 'auto') {
       const ph = game.phase;
-      if (ph === 'meterWeight' || ph === 'meterLine' || ph === 'gesture' || ph === 'slide') mode = 'delivery';
+      if (ph === 'meterWeight' || ph === 'meterLine' || ph === 'gesture' || ph === 'charge' || ph === 'glide' || ph === 'slide') mode = 'delivery';
       else if ((ph === 'running' || ph === 'replay') && s && s.inPlay && s.y * d < farHogY(d) * d - 1.5) mode = 'follow';
     }
     switch (mode) {
@@ -344,8 +350,8 @@ export class View3D implements GameView {
         const sx = s ? s.x : 0;
         // tall (portrait) screens look down more steeply so the ice fills the view
         const tall = this.w / this.playHeight() < 1;
-        pos.copy(V(sx * 0.5, sy - d * (tall ? 3.4 : 2.8), tall ? 3.4 : 1.7));
-        tgt.copy(V(sx, sy + d * (tall ? 5.5 : 9), 0));
+        pos.copy(V(sx * 0.5, sy - d * (tall ? 4.6 : 3.2), tall ? 3.6 : 1.8));
+        tgt.copy(V(sx, sy + d * (tall ? 3.6 : 8), 0));
         break;
       }
       case 'follow':
@@ -409,6 +415,7 @@ export class View3D implements GameView {
   }
 
   draw(game: Game, dt: number): void {
+    this.bottom = game.phase === 'charge' || game.phase === 'glide' ? this.bottomDelivery : 150;
     this.adaptResolution(dt);
     this.updateCamera(game, dt);
     this.updateHeat(game);
@@ -436,6 +443,17 @@ export class View3D implements GameView {
     if (this.preview.visible && p !== this.lastPreview) {
       this.lastPreview = p;
       this.setLine(this.preview, p, 0.012);
+    }
+
+    // while delivering: the line from the hack to the broom
+    const delivering = game.phase === 'charge' || game.phase === 'glide';
+    this.aimLine.visible = delivering;
+    if (delivering) {
+      const key = `${game.aimX},${game.aimY}`;
+      if (key !== this.aimKey) {
+        this.aimKey = key;
+        this.setLine(this.aimLine, [0, hackY(game.dir), game.aimX, game.aimY], 0.013);
+      }
     }
 
     this.drawSweepers(game);

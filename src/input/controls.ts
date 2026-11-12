@@ -22,6 +22,10 @@ export class Controls {
   private decisionKey = '';
 
   private swipe: { id: number; x: number; y: number } | null = null;
+  /** Push delivery: the finger that holds the stone. */
+  private hold_: { id: number; x: number; y: number; steerX: number } | null = null;
+  private steerKeys = { left: false, right: false, value: 0, last: 0 };
+  private scaleKey = '';
 
   constructor(public game: Game, private view: GameView, canvas: HTMLCanvasElement, private sound: Sound) {
     // aiming on the ice
@@ -38,7 +42,27 @@ export class Controls {
       const track = view.playHeight() * 0.62;
       this.game.gestureMove(dy / track, dy > 20 ? (e.clientX - sw.x) / dy : 0);
     };
+    // push delivery: hold = build up weight, swipe up = push off, drag sideways = steer, lift = let go
+    const pushMove = (e: PointerEvent): void => {
+      const h = this.hold_;
+      if (!h || e.pointerId !== h.id) return;
+      if (this.game.phase === 'charge' && h.y - e.clientY > 28) {
+        this.game.pushOff();
+        h.steerX = e.clientX;
+      }
+      if (this.game.phase === 'glide') this.game.steer((e.clientX - h.steerX) / (window.innerWidth * 0.3));
+    };
     canvas.addEventListener('pointerdown', (e) => {
+      if (this.game.phase === 'charge') {
+        this.hold_ = { id: e.pointerId, x: e.clientX, y: e.clientY, steerX: e.clientX };
+        this.game.pushStart();
+        try {
+          canvas.setPointerCapture(e.pointerId);
+        } catch {
+          /* pointer already gone */
+        }
+        return;
+      }
       if (this.game.phase === 'gesture') {
         this.swipe = { id: e.pointerId, x: e.clientX, y: e.clientY };
         try {
@@ -60,9 +84,16 @@ export class Controls {
     canvas.addEventListener('pointermove', (e) => {
       if (e.pointerId === this.aimPointer) aim(e);
       swipeMove(e);
+      pushMove(e);
     });
     const end = (e: PointerEvent): void => {
       if (e.pointerId === this.aimPointer) this.aimPointer = -1;
+      if (this.hold_ && e.pointerId === this.hold_.id) {
+        this.hold_ = null;
+        // lifting without a swipe pushes off as well; the stone then glides unsteered
+        if (this.game.phase === 'charge') this.game.pushOff();
+        this.game.letGo();
+      }
       if (this.swipe && e.pointerId === this.swipe.id) {
         swipeMove(e);
         this.swipe = null;
@@ -81,6 +112,7 @@ export class Controls {
     this.press('btn-continue', () => this.game.tap());
     this.press('btn-cancel', () => this.game.cancel());
     this.press('btn-cancel-gesture', () => this.game.cancel());
+    this.press('btn-cancel-push', () => this.game.cancel());
     this.press('btn-camera', () => this.cycleCamera());
     this.press('btn-replay', () => this.game.startReplay(0));
     this.press('btn-replay-slow', () => {
@@ -116,11 +148,13 @@ export class Controls {
       switch (e.code) {
         case 'KeyQ':
         case 'ArrowLeft':
-          game.setTurn('ccw');
+          if (game.phase === 'glide') this.steerKeys.left = true;
+          else game.setTurn('ccw');
           break;
         case 'KeyE':
         case 'ArrowRight':
-          game.setTurn('cw');
+          if (game.phase === 'glide') this.steerKeys.right = true;
+          else game.setTurn('cw');
           break;
         case 'KeyW':
         case 'ArrowUp':
@@ -132,7 +166,16 @@ export class Controls {
           break;
         case 'Space':
         case 'Enter':
-          game.tap();
+          if (game.phase === 'glide') game.letGo();
+          else if (game.phase === 'charge') game.pushStart();
+          else {
+            game.tap();
+            // keep holding the key to build up the weight right away
+            if ((game.phase as string) === 'charge') {
+              this.steerKeys.value = 0;
+              game.pushStart();
+            }
+          }
           break;
         case 'Escape':
           game.cancel();
@@ -184,6 +227,12 @@ export class Controls {
       e.preventDefault();
     });
     window.addEventListener('keyup', (e) => {
+      if ((e.code === 'Space' || e.code === 'Enter') && this.game.phase === 'charge') {
+        this.steerKeys.value = 0;
+        this.game.pushOff();
+      }
+      if (e.code === 'ArrowLeft' || e.code === 'KeyQ') this.steerKeys.left = false;
+      if (e.code === 'ArrowRight' || e.code === 'KeyE') this.steerKeys.right = false;
       if (e.code === 'KeyA') this.game.sweepUp(0);
       if (e.code === 'KeyD') this.game.sweepUp(1);
       if (e.code === 'KeyL') this.game.sweepUp(2);
@@ -314,6 +363,35 @@ export class Controls {
       $('btn-replay-slow').classList.toggle('on', g.replay.slow);
     }
     $('btn-sound').textContent = this.sound.muted ? '🔇' : '🔊';
+
+    // push delivery: power scale while holding, line gauge while gliding
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - this.steerKeys.last) / 1000);
+    this.steerKeys.last = now;
+    if (phase === 'glide' && (this.steerKeys.left || this.steerKeys.right)) {
+      this.steerKeys.value += (this.steerKeys.right ? 1 : 0) * 1.6 * dt - (this.steerKeys.left ? 1 : 0) * 1.6 * dt;
+      g.steer(this.steerKeys.value);
+    }
+    if (phase === 'charge' || phase === 'glide') {
+      const key = g.powerScale.map((t) => t.label).join() + g.weightIndex;
+      if (key !== this.scaleKey) {
+        this.scaleKey = key;
+        const named = new Set(['Guard', 'Tee / Button', 'Hack', 'Peel']);
+        $('power-ticks').innerHTML = g.powerScale
+          .map((t) => `<i style="left:${(t.pos * 100).toFixed(1)}%"></i>${named.has(t.label) ? `<span style="left:${(t.pos * 100).toFixed(1)}%">${t.label.replace(' / Button', '')}</span>` : ''}`)
+          .join('');
+      }
+      $('power-fill').style.width = `${(g.power * 100).toFixed(1)}%`;
+      $('power-target').style.left = `${(g.targetPower * 100).toFixed(1)}%`;
+      $('power-label').textContent = g.power > 0.01 ? g.powerLabel : `Ansage: ${g.weight.label}`;
+      if (phase === 'charge') {
+        $('push-title').textContent = 'Gedrückt halten = Gewicht aufbauen · nach oben wischen = abstoßen';
+      } else {
+        const gl = g.glide;
+        $('push-title').textContent = gl.u >= gl.releaseAt ? 'Jetzt loslassen – vor der roten Linie!' : 'Seitlich ziehen: Stein auf der Linie halten';
+        $('line-marker').style.left = `${50 + g.lineOffset * 50}%`;
+      }
+    }
 
     // swipe gesture: live pace indicator
     if (phase === 'gesture') {

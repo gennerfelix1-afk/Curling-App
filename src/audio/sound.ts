@@ -112,8 +112,8 @@ export class Sound {
     for (const s of game.viewWorld.stones) {
       if (s.inPlay && s.moving) speed = Math.max(speed, Math.sqrt(s.vx * s.vx + s.vy * s.vy));
     }
-    if (game.phase !== 'running' && game.phase !== 'replay' && game.phase !== 'slide' && game.phase !== 'gesture') speed = 0;
-    else if (game.phase === 'slide' || game.phase === 'gesture') speed = 1.6; // sliding out of the hack
+    if (game.phase !== 'running' && game.phase !== 'replay' && game.phase !== 'slide' && game.phase !== 'gesture' && game.phase !== 'glide') speed = 0;
+    else if (game.phase !== 'running' && game.phase !== 'replay') speed = 1.6; // sliding out of the hack
     this.rumbleGain.gain.setTargetAtTime(Math.min(0.5, speed * 0.16), t, 0.08);
     this.rumbleFilter.frequency.setTargetAtTime(90 + speed * 150, t, 0.08);
 

@@ -54,7 +54,11 @@ Ablauf pro Stein: **Besen setzen → Drehung → Gewicht → Abgabe → Wischen*
 | Besen (Zielpunkt) setzen | aufs Eis klicken / ziehen | aufs Eis tippen / ziehen |
 | Drehung: Out-Turn ↺ / In-Turn ↻ | `Q` / `E` oder `←` / `→` | Buttons |
 | Gewicht leichter / schwerer | `S` / `W` oder `↓` / `↑` | `−` / `+` |
-| Abgabe starten, Gewicht- und Linien-Anzeige stoppen | `Leertaste` / `Enter` (3×) | „Abgabe“, dann 2× auf die Anzeige tippen |
+| **Abgabe** (Standard): Gewicht aufbauen | `Leertaste` gedrückt halten | „Abgabe“ tippen, dann Finger aufs Eis legen und halten |
+| Abstoßen | `Leertaste` loslassen | Finger nach oben wischen (nicht abheben) |
+| Linie halten beim Gleiten | `←` / `→` | Finger seitlich ziehen |
+| Stein loslassen (vor der roten Hog Line) | `Leertaste` | Finger abheben |
+| Alternative Abgabe „Timing-Anzeigen“ (im Menü) | `Leertaste` / `Enter` (3×) | „Abgabe“, dann 2× auf die Anzeige tippen |
 | Abgabe per Wisch-Geste (im Menü wählbar, Standard auf Touch-Geräten) | „Abgabe“, dann mit der Maus nach oben ziehen und loslassen | „Abgabe“, dann nach oben wischen und loslassen |
 | Abbrechen (vor dem Abstoß) | `Esc` | „Abbrechen“ |
 | Wischer 1 / Wischer 2 | `A` / `D` halten | linkes / rechtes Feld halten |
@@ -67,7 +71,12 @@ Ablauf pro Stein: **Besen setzen → Drehung → Gewicht → Abgabe → Wischen*
 | Ton an / aus | `M` | Lautsprecher-Button |
 | Debug-Overlay (Reibungsfeld, Geschwindigkeit, Drehung, vorhergesagte Bahn) | `B` oder `F3` | – |
 
-- **Wisch-Geste:** Der Stein folgt dem Finger aus dem Hack. Das Tempo der Geste bestimmt das Gewicht (die Anzeige
+- **Abstoßen, gleiten, loslassen** (Standard): Je länger du hältst, desto mehr Gewicht – die Skala zeigt live den
+  Namen des Gewichts (Guard … Peel), der weiße Strich markiert das angesagte Gewicht. Nach dem Abstoßen driftet der
+  Stein leicht von der Linie zum Besen ab; die Anzeige zeigt „zu weit links / rechts“, du ziehst dagegen. Loslassen
+  gibt den Stein frei. Wer früh loslässt, verliert nur die Kontrolle über die Linie (der Stein gleitet allein weiter);
+  wer an der Hog Line noch festhält, verliert den Stein.
+- **Wisch-Geste** (Alternative): Der Stein folgt dem Finger aus dem Hack. Das Tempo der Geste bestimmt das Gewicht (die Anzeige
   zeigt live „zu langsam / zu schnell“; ideal sind ca. 1,3 s bis zum Loslassen), ein schräger Zug verfehlt den Besen.
   Wer an der roten Hog Line noch nicht losgelassen hat, verliert den Stein (Hog-Line-Verletzung).
 - **Timing-Anzeigen:** Die beiden Anzeigen bei der Abgabe bestimmen den Ausführungsfehler: je näher an der Mitte gestoppt, desto genauer

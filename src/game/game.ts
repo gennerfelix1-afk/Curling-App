@@ -31,6 +31,8 @@ export type Phase =
   | 'meterWeight'
   | 'meterLine'
   | 'gesture'
+  | 'charge'
+  | 'glide'
   | 'slide'
   | 'running'
   | 'decision'
@@ -102,8 +104,11 @@ export interface GameOptions {
   hammer: 'coin' | 'lsd' | 0 | 1;
   /** Treat brush contact with a moving stone as a touched stone (R9). */
   touchRule: boolean;
-  /** Delivery mechanic: timing meters or a swipe gesture. */
-  delivery: 'meter' | 'gesture';
+  /**
+   * Delivery mechanic: 'push' = hold to build up the weight, push off, steer the slide, let go;
+   * 'meter' = two timing meters; 'gesture' = one swipe whose pace sets the weight.
+   */
+  delivery: 'push' | 'meter' | 'gesture';
   /** Who controls each team. */
   players: ['human' | 'ai', 'human' | 'ai'];
   /** Strength of the AI, index into AI_LEVELS (0…3). */
@@ -190,6 +195,8 @@ export class Game {
   /** Progress of the stone along the slide path: 0 = hack, 1 = near hog line. */
   private slideU = 0;
   private slideFrom = 0;
+  /** Push delivery state (phases 'charge' and 'glide'). */
+  private push = { charging: false, power: 0, steer: 0, t: 0, lifted: false, p1: 0, p2: 0, active: false };
   /** Swipe gesture state (phase 'gesture'). */
   private gesture = { progress: 0, slope: 0, ticks: 0, started: false };
   private settleT = 0;
@@ -372,6 +379,13 @@ export class Game {
           this.beginGesture();
           return true;
         }
+        if (this.options.delivery === 'push') {
+          this.beginSlide();
+          this.phase = 'charge';
+          this.push = { charging: false, power: 0, steer: 0, t: 0, lifted: false, p1: 0, p2: 0, active: true };
+          this.lineDev = 0;
+          return true;
+        }
         this.phase = 'meterWeight';
         this.meterTime = 0;
         this.meter = -1;
@@ -397,11 +411,116 @@ export class Game {
   /** Back to aiming before the stone leaves the hack. */
   cancel(): void {
     if (this.phase === 'meterWeight' || this.phase === 'meterLine') this.phase = 'aim';
-    if (this.phase === 'gesture') {
+    if (this.phase === 'gesture' || this.phase === 'charge') {
       this.world.stones.pop();
       this.current = null;
+      this.push.active = false;
       this.phase = 'aim';
     }
+  }
+
+  // ───────────── push delivery: hold, push off, steer, let go ─────────────
+
+  /** Position of a weight on the power scale (0…1). */
+  private scalePos(i: number): number {
+    return 0.08 + (0.84 * i) / (this.weights.length - 1);
+  }
+
+  /** Release speed for a power level: the named weights are evenly spaced on the scale. */
+  powerSpeed(power: number): number {
+    const w = this.weights;
+    const n = w.length;
+    const f = ((power - 0.08) / 0.84) * (n - 1);
+    if (f <= 0) return w[0].speed * (1 - 0.07 * Math.min(1, -f / ((0.08 / 0.84) * (n - 1))));
+    if (f >= n - 1) return w[n - 1].speed * (1 + 0.04 * Math.min(1, (f - (n - 1)) / ((0.08 / 0.84) * (n - 1))));
+    const i = Math.floor(f);
+    return w[i].speed + (w[i + 1].speed - w[i].speed) * (f - i);
+  }
+
+  /** Current power 0…1 while holding. */
+  get power(): number {
+    return this.push.power;
+  }
+
+  /** Where the called weight sits on the power scale. */
+  get targetPower(): number {
+    return this.scalePos(this.weightIndex);
+  }
+
+  /** Name of the weight the current power corresponds to. */
+  get powerLabel(): string {
+    const w = this.weights;
+    const f = ((this.push.power - 0.08) / 0.84) * (w.length - 1);
+    return w[Math.max(0, Math.min(w.length - 1, Math.round(f)))].label;
+  }
+
+  /** Ticks of the power scale for the display. */
+  get powerScale(): { label: string; pos: number }[] {
+    return this.weights.map((w, i) => ({ label: w.label, pos: this.scalePos(i) }));
+  }
+
+  /** Finger down in the hack: start building up the weight. */
+  pushStart(): void {
+    if (this.phase === 'charge') this.push.charging = true;
+  }
+
+  /** Push off: the weight is fixed and the stone starts to glide. */
+  pushOff(): void {
+    if (this.phase !== 'charge' || this.push.power < 0.02) return;
+    this.push.charging = false;
+    this.push.t = 0;
+    this.push.steer = 0;
+    this.push.lifted = false;
+    // every slide wanders off the line a little differently
+    this.push.p1 = this.rng.range(0, 6.283);
+    this.push.p2 = this.rng.range(0, 6.283);
+    this.phase = 'glide';
+  }
+
+  /** Steering while gliding: -1…1, positive = to the right (seen from the thrower). */
+  steer(value: number): void {
+    if (this.phase === 'glide' && !this.push.lifted) this.push.steer = Math.max(-1.5, Math.min(1.5, value));
+  }
+
+  /** Let go of the stone. Before the release zone it glides on by itself (unsteered). */
+  letGo(): void {
+    if (this.phase !== 'glide') return;
+    this.push.lifted = true;
+    if (this.slideU >= this.releaseU) this.release();
+  }
+
+  /**
+   * How far the stone is off the line to the broom right now: -1…1, positive = right of the line
+   * (seen from the thrower). The player steers against it.
+   */
+  get lineOffset(): number {
+    const p = this.push;
+    const t = p.t;
+    const ramp = Math.min(1, t / 0.6);
+    const wander = EXECUTION.wander[this.options.difficulty] * ramp * (0.65 * Math.sin(1.9 * t + p.p1) + 0.35 * Math.sin(3.4 * t + p.p2));
+    return Math.max(-1, Math.min(1, wander + p.steer));
+  }
+
+  /** Progress of the glide: 0 = hack, 1 = hog line; and where the release zone starts. */
+  get glide(): { u: number; releaseAt: number } {
+    return { u: this.slideU, releaseAt: this.releaseU };
+  }
+
+  private tickCharge(): void {
+    const p = this.push;
+    if (p.charging) p.power = Math.min(1, p.power + DT / EXECUTION.chargeTime[this.options.difficulty]);
+    this.slideU = 0;
+    this.placeSlidingStone();
+  }
+
+  private tickGlide(): void {
+    const p = this.push;
+    p.t += DT;
+    this.slideU = Math.min(1, p.t / EXECUTION.glideTime);
+    // sheet x grows to the thrower's right when playing towards +y
+    this.lineDev = this.lineOffset * this.dir;
+    this.placeSlidingStone();
+    if (this.slideU >= 1 || (p.lifted && this.slideU >= this.releaseU)) this.release();
   }
 
   // ───────────── swipe gesture delivery ─────────────
@@ -503,7 +622,10 @@ export class Game {
     const diff = this.options.difficulty;
     const speed = this.aiExec
       ? this.aiExec.speed
-      : this.weight.speed * (1 + this.weightDev * EXECUTION.weightError[diff]);
+      : this.push.active
+        ? this.powerSpeed(this.push.power)
+        : this.weight.speed * (1 + this.weightDev * EXECUTION.weightError[diff]);
+    this.push.active = false;
     const angle = s.angle;
     this.advisor = new SweepAdvisor(this.shotTarget());
     this.advice = 'off';
@@ -624,6 +746,12 @@ export class Game {
       }
       case 'gesture':
         this.tickGesture();
+        break;
+      case 'charge':
+        this.tickCharge();
+        break;
+      case 'glide':
+        this.tickGlide();
         break;
       case 'slide':
         this.tickSlide();
