@@ -45,6 +45,8 @@ export class View3D implements GameView {
   private h = 1;
   private top = 96;
   private bottom = 150;
+  /** Taller control panel while delivering (power scale / line gauge). */
+  private readonly bottomDelivery = 235;
 
   private camPos = new THREE.Vector3(0, 12, 0);
   private camTarget = new THREE.Vector3();
@@ -71,6 +73,14 @@ export class View3D implements GameView {
   private broom = new THREE.Group();
   private preview!: THREE.Line;
   private predicted!: THREE.Line;
+  private aimLine!: THREE.Line;
+  private aimKey = '';
+  /** Ice spray at impacts: a small pool of particles. */
+  private sparks!: THREE.Points;
+  private sparkVel = new Float32Array(96 * 3);
+  private sparkLife = new Float32Array(96);
+  private sparkNext = 0;
+  private shake = 0;
   private brushes: THREE.Group[] = [];
   private rings: THREE.Mesh[] = [];
   private measureLines!: THREE.LineSegments;
@@ -272,7 +282,14 @@ export class View3D implements GameView {
     this.predicted.renderOrder = 81;
     this.measureLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x111111, depthTest: false }));
     this.measureLines.renderOrder = 82;
-    this.scene.add(this.preview, this.predicted, this.measureLines, this.arrow);
+    const sparkGeo = new THREE.BufferGeometry();
+    sparkGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(96 * 3).fill(-999), 3));
+    this.sparks = new THREE.Points(sparkGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.035, transparent: true, opacity: 0.9, depthWrite: false }));
+    this.sparks.frustumCulled = false;
+    this.scene.add(this.sparks);
+    this.aimLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x0a7d3b, depthTest: false }));
+    this.aimLine.renderOrder = 79;
+    this.scene.add(this.preview, this.predicted, this.aimLine, this.measureLines, this.arrow);
 
     // brushes: 0, 1 = sweepers, 2 = the other team's skip
     for (let k = 0; k < SWEEP.sweepers; k++) {
@@ -335,7 +352,7 @@ export class View3D implements GameView {
     if (this.cameraMode === 'sheet') mode = 'sheet';
     else if (this.cameraMode === 'auto') {
       const ph = game.phase;
-      if (ph === 'meterWeight' || ph === 'meterLine' || ph === 'gesture' || ph === 'slide') mode = 'delivery';
+      if (ph === 'meterWeight' || ph === 'meterLine' || ph === 'gesture' || ph === 'charge' || ph === 'glide' || ph === 'slide') mode = 'delivery';
       else if ((ph === 'running' || ph === 'replay') && s && s.inPlay && s.y * d < farHogY(d) * d - 1.5) mode = 'follow';
     }
     switch (mode) {
@@ -344,8 +361,8 @@ export class View3D implements GameView {
         const sx = s ? s.x : 0;
         // tall (portrait) screens look down more steeply so the ice fills the view
         const tall = this.w / this.playHeight() < 1;
-        pos.copy(V(sx * 0.5, sy - d * (tall ? 3.4 : 2.8), tall ? 3.4 : 1.7));
-        tgt.copy(V(sx, sy + d * (tall ? 5.5 : 9), 0));
+        pos.copy(V(sx * 0.5, sy - d * (tall ? 4.6 : 3.2), tall ? 3.6 : 1.8));
+        tgt.copy(V(sx, sy + d * (tall ? 3.6 : 8), 0));
         break;
       }
       case 'follow':
@@ -376,9 +393,51 @@ export class View3D implements GameView {
     this.camera.aspect = this.w / this.playHeight();
     this.camera.updateProjectionMatrix();
     this.camera.position.copy(this.camPos);
+    if (this.shake > 0.001) {
+      this.camera.position.x += (Math.random() - 0.5) * this.shake;
+      this.camera.position.y += (Math.random() - 0.5) * this.shake;
+      this.shake *= Math.pow(0.002, dt);
+    }
     // looking almost straight down: keep "up" along the sheet so the play direction points up
     this.camera.up.set(0, 0.2, -d).normalize();
     this.camera.lookAt(this.camTarget);
+  }
+
+  /** Stone hits stone: a burst of ice spray and a short camera shake. */
+  impact(x: number, y: number, strength: number): void {
+    const pos = this.sparks.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const n = Math.round(8 + 22 * strength);
+    for (let i = 0; i < n; i++) {
+      const k = this.sparkNext;
+      this.sparkNext = (this.sparkNext + 1) % 96;
+      const a = Math.random() * Math.PI * 2;
+      const v = (0.4 + Math.random() * 1.6) * (0.4 + strength);
+      pos.setXYZ(k, x, 0.08, -y);
+      this.sparkVel[k * 3] = Math.cos(a) * v;
+      this.sparkVel[k * 3 + 1] = 0.6 + Math.random() * 1.4 * strength;
+      this.sparkVel[k * 3 + 2] = Math.sin(a) * v;
+      this.sparkLife[k] = 0.35 + Math.random() * 0.4;
+    }
+    pos.needsUpdate = true;
+    this.shake = Math.max(this.shake, 0.05 * strength);
+  }
+
+  private updateSparks(dt: number): void {
+    const pos = this.sparks.geometry.getAttribute('position') as THREE.BufferAttribute;
+    let any = false;
+    for (let k = 0; k < 96; k++) {
+      if (this.sparkLife[k] <= 0) continue;
+      any = true;
+      this.sparkLife[k] -= dt;
+      if (this.sparkLife[k] <= 0) {
+        pos.setY(k, -999);
+        continue;
+      }
+      this.sparkVel[k * 3 + 1] -= 6 * dt;
+      const y = Math.max(0.01, pos.getY(k) + this.sparkVel[k * 3 + 1] * dt);
+      pos.setXYZ(k, pos.getX(k) + this.sparkVel[k * 3] * dt, y, pos.getZ(k) + this.sparkVel[k * 3 + 2] * dt);
+    }
+    if (any) pos.needsUpdate = true;
   }
 
   toSheet(px: number, py: number): { x: number; y: number } | null {
@@ -409,6 +468,7 @@ export class View3D implements GameView {
   }
 
   draw(game: Game, dt: number): void {
+    this.bottom = game.phase === 'charge' || game.phase === 'glide' ? this.bottomDelivery : 150;
     this.adaptResolution(dt);
     this.updateCamera(game, dt);
     this.updateHeat(game);
@@ -438,6 +498,18 @@ export class View3D implements GameView {
       this.setLine(this.preview, p, 0.012);
     }
 
+    // while delivering: the line from the hack to the broom
+    const delivering = game.phase === 'charge' || game.phase === 'glide';
+    this.aimLine.visible = delivering;
+    if (delivering) {
+      const key = `${game.aimX},${game.aimY}`;
+      if (key !== this.aimKey) {
+        this.aimKey = key;
+        this.setLine(this.aimLine, [0, hackY(game.dir), game.aimX, game.aimY], 0.013);
+      }
+    }
+
+    this.updateSparks(dt);
     this.drawSweepers(game);
     this.drawResult(game);
     this.drawDebug(game, dt);

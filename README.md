@@ -54,12 +54,15 @@ Ablauf pro Stein: **Besen setzen → Drehung → Gewicht → Abgabe → Wischen*
 | Besen (Zielpunkt) setzen | aufs Eis klicken / ziehen | aufs Eis tippen / ziehen |
 | Drehung: Out-Turn ↺ / In-Turn ↻ | `Q` / `E` oder `←` / `→` | Buttons |
 | Gewicht leichter / schwerer | `S` / `W` oder `↓` / `↑` | `−` / `+` |
-| Abgabe starten, Gewicht- und Linien-Anzeige stoppen | `Leertaste` / `Enter` (3×) | „Abgabe“, dann 2× auf die Anzeige tippen |
+| **Abgabe** (Standard): Gewicht aufbauen | `Leertaste` gedrückt halten | „Abgabe“ tippen, dann Finger aufs Eis legen und halten |
+| Abstoßen | `Leertaste` loslassen | Finger nach oben wischen (nicht abheben) |
+| Linie halten beim Gleiten | `←` / `→` | Finger seitlich ziehen |
+| Stein loslassen (vor der roten Hog Line) | `Leertaste` | Finger abheben |
+| Alternative Abgabe „Timing-Anzeigen“ (im Menü) | `Leertaste` / `Enter` (3×) | „Abgabe“, dann 2× auf die Anzeige tippen |
 | Abgabe per Wisch-Geste (im Menü wählbar, Standard auf Touch-Geräten) | „Abgabe“, dann mit der Maus nach oben ziehen und loslassen | „Abgabe“, dann nach oben wischen und loslassen |
 | Abbrechen (vor dem Abstoß) | `Esc` | „Abbrechen“ |
-| Wischer 1 / Wischer 2 | `A` / `D` halten | linkes / rechtes Feld halten |
-| härter wischen | Taste schnell wiederholt drücken | Feld schnell tippen |
-| Wischseite links / mittig / rechts | `1` / `2` / `3` | Buttons zwischen den Feldern |
+| Wischen | `A` / `D` halten (Wischer 1 / 2), schnell wiederholt drücken = härter; oder mit der Maus reiben | mit dem Finger auf dem Eis hin und her reiben – schneller = härter |
+| Wischseite links / mittig / rechts | `1` / `2` / `3` | im linken / mittleren / rechten Drittel des Bildschirms reiben |
 | Skip des anderen Teams wischt (ab Tee Line) | `L` halten | Button „Skip … wischt“ |
 | Ansage an die Mitspieler (Wisch-Modus „auf Ansage“): HARD / Clean / Off | `H` / `J` / `K` | Buttons |
 | Kamera: Auto → Draufsicht → Übersicht | `C` | Button „Kamera“ |
@@ -67,12 +70,21 @@ Ablauf pro Stein: **Besen setzen → Drehung → Gewicht → Abgabe → Wischen*
 | Ton an / aus | `M` | Lautsprecher-Button |
 | Debug-Overlay (Reibungsfeld, Geschwindigkeit, Drehung, vorhergesagte Bahn) | `B` oder `F3` | – |
 
-- **Wisch-Geste:** Der Stein folgt dem Finger aus dem Hack. Das Tempo der Geste bestimmt das Gewicht (die Anzeige
+- **Abstoßen, gleiten, loslassen** (Standard): Je länger du hältst, desto mehr Gewicht – die Skala zeigt live den
+  Namen des Gewichts (Guard … Peel), der weiße Strich markiert das angesagte Gewicht. Nach dem Abstoßen driftet der
+  Stein leicht von der Linie zum Besen ab; die Anzeige zeigt „zu weit links / rechts“, du ziehst dagegen. Loslassen
+  gibt den Stein frei. Wer früh loslässt, verliert nur die Kontrolle über die Linie (der Stein gleitet allein weiter);
+  wer an der Hog Line noch festhält, verliert den Stein.
+- **Wisch-Geste** (Alternative): Der Stein folgt dem Finger aus dem Hack. Das Tempo der Geste bestimmt das Gewicht (die Anzeige
   zeigt live „zu langsam / zu schnell“; ideal sind ca. 1,3 s bis zum Loslassen), ein schräger Zug verfehlt den Besen.
   Wer an der roten Hog Line noch nicht losgelassen hat, verliert den Stein (Hog-Line-Verletzung).
 - **Timing-Anzeigen:** Die beiden Anzeigen bei der Abgabe bestimmen den Ausführungsfehler: je näher an der Mitte gestoppt, desto genauer
   stimmen Gewicht und Linie.
-- Halten = lockeres Wischen (60 %), schnelles Tippen steigert bis 100 %. Hartes Dauerwischen ermüdet (Balken im Feld).
+- **Wischen durch Reiben:** Ein Finger steuert beide Wischer. Etwa eine Bildschirmbreite pro Sekunde ist volle
+  Intensität; hartes Dauerwischen ermüdet (Balken „Kraft der Wischer“). Jeder Strich ist als kurze Vibration spürbar
+  (Android; iPhones erlauben im Browser keine Vibration).
+- **Spielgefühl:** Zeitlupe, Eis-Spritzer und Kamera-Wackeln bei harten Treffern, Vibration bei Abstoßen, Loslassen
+  und Treffern, Punkte-Einblendung mit Ton am Ende jedes Ends.
 - Die gestrichelte Linie zeigt den geschätzten Weg **ohne** Wischen (Anfänger-Hilfe).
 - `?seed=123` in der URL legt Eis und Zufall fest (reproduzierbare Partie); `?view=2d` schaltet auf die einfache
   2D-Draufsicht (auch automatisch, wenn WebGL fehlt).

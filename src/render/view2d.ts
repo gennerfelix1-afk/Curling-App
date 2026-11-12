@@ -74,6 +74,8 @@ export class View2D implements GameView {
       case 'meterWeight':
       case 'meterLine':
       case 'gesture':
+      case 'charge':
+      case 'glide':
       case 'slide':
         cy = hackY(d) + d * 5.5;
         len = 13;

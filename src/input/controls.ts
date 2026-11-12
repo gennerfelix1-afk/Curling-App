@@ -1,6 +1,7 @@
 import { RULES, SWEEP } from '../physics/config';
 import { TEAM_NAMES, type Game } from '../game/game';
 import type { Sound } from '../audio/sound';
+import { haptics } from './haptics';
 import type { CameraMode, GameView } from '../render/view';
 
 const CAMERA_LABEL: Record<CameraMode, string> = { auto: 'Kamera: Auto', top: 'Kamera: Draufsicht', sheet: 'Kamera: Übersicht' };
@@ -22,6 +23,17 @@ export class Controls {
   private decisionKey = '';
 
   private swipe: { id: number; x: number; y: number } | null = null;
+  /** Push delivery: the finger that holds the stone. */
+  private hold_: { id: number; x: number; y: number; steerX: number } | null = null;
+  private steerKeys = { left: false, right: false, value: 0, last: 0 };
+  private scaleKey = '';
+  /** Sweeping gesture: the rubbing finger, distance rubbed since the last frame, smoothed speed. */
+  private scrubPointer: { id: number; x: number; y: number; dir: number } | null = null;
+  private scrubDist = 0;
+  private scrubSpeed = 0;
+  private lastTick = -1;
+  private lastCall = '';
+  private lastPhase = '';
 
   constructor(public game: Game, private view: GameView, canvas: HTMLCanvasElement, private sound: Sound) {
     // aiming on the ice
@@ -38,7 +50,63 @@ export class Controls {
       const track = view.playHeight() * 0.62;
       this.game.gestureMove(dy / track, dy > 20 ? (e.clientX - sw.x) / dy : 0);
     };
+    // push delivery: hold = build up weight, swipe up = push off, drag sideways = steer, lift = let go
+    const pushMove = (e: PointerEvent): void => {
+      const h = this.hold_;
+      if (!h || e.pointerId !== h.id) return;
+      if (this.game.phase === 'charge' && h.y - e.clientY > 28) {
+        this.game.pushOff();
+        h.steerX = e.clientX;
+      }
+      if (this.game.phase === 'glide') this.game.steer((e.clientX - h.steerX) / (window.innerWidth * 0.3));
+    };
+    // sweeping: rub the ice with a finger – the faster, the harder
     canvas.addEventListener('pointerdown', (e) => {
+      if (this.game.phase !== 'running') return;
+      this.scrubPointer = { id: e.pointerId, x: e.clientX, y: e.clientY, dir: 0 };
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        /* pointer already gone */
+      }
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      const p = this.scrubPointer;
+      if (!p || e.pointerId !== p.id) return;
+      const dx = e.clientX - p.x;
+      const dy = e.clientY - p.y;
+      this.scrubDist += Math.sqrt(dx * dx + dy * dy);
+      // every change of direction is one brush stroke you can feel
+      const along = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+      const dir = along > 2 ? 1 : along < -2 ? -1 : 0;
+      if (dir !== 0 && dir !== p.dir) {
+        if (p.dir !== 0) haptics.tick();
+        p.dir = dir;
+      }
+      p.x = e.clientX;
+      p.y = e.clientY;
+    });
+    const scrubEnd = (e: PointerEvent): void => {
+      if (this.scrubPointer && e.pointerId === this.scrubPointer.id) {
+        this.scrubPointer = null;
+        this.scrubSpeed = 0;
+        this.game.setScrub(0); // brush off the ice at once
+      }
+    };
+    canvas.addEventListener('pointerup', scrubEnd);
+    canvas.addEventListener('pointercancel', scrubEnd);
+
+    canvas.addEventListener('pointerdown', (e) => {
+      if (this.game.phase === 'charge') {
+        this.hold_ = { id: e.pointerId, x: e.clientX, y: e.clientY, steerX: e.clientX };
+        this.game.pushStart();
+        try {
+          canvas.setPointerCapture(e.pointerId);
+        } catch {
+          /* pointer already gone */
+        }
+        return;
+      }
       if (this.game.phase === 'gesture') {
         this.swipe = { id: e.pointerId, x: e.clientX, y: e.clientY };
         try {
@@ -60,9 +128,16 @@ export class Controls {
     canvas.addEventListener('pointermove', (e) => {
       if (e.pointerId === this.aimPointer) aim(e);
       swipeMove(e);
+      pushMove(e);
     });
     const end = (e: PointerEvent): void => {
       if (e.pointerId === this.aimPointer) this.aimPointer = -1;
+      if (this.hold_ && e.pointerId === this.hold_.id) {
+        this.hold_ = null;
+        // lifting without a swipe pushes off as well; the stone then glides unsteered
+        if (this.game.phase === 'charge') this.game.pushOff();
+        this.game.letGo();
+      }
       if (this.swipe && e.pointerId === this.swipe.id) {
         swipeMove(e);
         this.swipe = null;
@@ -81,6 +156,7 @@ export class Controls {
     this.press('btn-continue', () => this.game.tap());
     this.press('btn-cancel', () => this.game.cancel());
     this.press('btn-cancel-gesture', () => this.game.cancel());
+    this.press('btn-cancel-push', () => this.game.cancel());
     this.press('btn-camera', () => this.cycleCamera());
     this.press('btn-replay', () => this.game.startReplay(0));
     this.press('btn-replay-slow', () => {
@@ -91,11 +167,6 @@ export class Controls {
       this.sound.muted = !this.sound.muted;
     });
     this.press('meter', () => this.game.tap());
-    this.press('btn-side-l', () => this.game.setSweepSide(-1));
-    this.press('btn-side-c', () => this.game.setSweepSide(0));
-    this.press('btn-side-r', () => this.game.setSweepSide(1));
-    this.hold('pad-sweep-0', 0);
-    this.hold('pad-sweep-1', 1);
     this.hold('pad-skip', 2);
     this.press('btn-call-hard', () => this.game.setSweepCall('hard'));
     this.press('btn-call-clean', () => this.game.setSweepCall('clean'));
@@ -116,11 +187,13 @@ export class Controls {
       switch (e.code) {
         case 'KeyQ':
         case 'ArrowLeft':
-          game.setTurn('ccw');
+          if (game.phase === 'glide') this.steerKeys.left = true;
+          else game.setTurn('ccw');
           break;
         case 'KeyE':
         case 'ArrowRight':
-          game.setTurn('cw');
+          if (game.phase === 'glide') this.steerKeys.right = true;
+          else game.setTurn('cw');
           break;
         case 'KeyW':
         case 'ArrowUp':
@@ -132,7 +205,16 @@ export class Controls {
           break;
         case 'Space':
         case 'Enter':
-          game.tap();
+          if (game.phase === 'glide') game.letGo();
+          else if (game.phase === 'charge') game.pushStart();
+          else {
+            game.tap();
+            // keep holding the key to build up the weight right away
+            if ((game.phase as string) === 'charge') {
+              this.steerKeys.value = 0;
+              game.pushStart();
+            }
+          }
           break;
         case 'Escape':
           game.cancel();
@@ -184,6 +266,12 @@ export class Controls {
       e.preventDefault();
     });
     window.addEventListener('keyup', (e) => {
+      if ((e.code === 'Space' || e.code === 'Enter') && this.game.phase === 'charge') {
+        this.steerKeys.value = 0;
+        this.game.pushOff();
+      }
+      if (e.code === 'ArrowLeft' || e.code === 'KeyQ') this.steerKeys.left = false;
+      if (e.code === 'ArrowRight' || e.code === 'KeyE') this.steerKeys.right = false;
       if (e.code === 'KeyA') this.game.sweepUp(0);
       if (e.code === 'KeyD') this.game.sweepUp(1);
       if (e.code === 'KeyL') this.game.sweepUp(2);
@@ -191,6 +279,24 @@ export class Controls {
     window.addEventListener('blur', () => {
       for (let k = 0; k < 3; k++) this.game.sweepUp(k);
     });
+  }
+
+  /** Turn the rubbing of the last frame into a sweeping intensity. */
+  private updateScrub(dt: number): void {
+    const g = this.game;
+    if (g.isAI(g.team) || g.options.sweepMode !== 'manual') {
+      g.setScrub(0);
+      return;
+    }
+    const p = this.scrubPointer;
+    // rubbing speed in screen widths per second; about one width per second is full intensity
+    const speed = dt > 0 ? this.scrubDist / dt / window.innerWidth : 0;
+    this.scrubDist = 0;
+    const k = 1 - Math.pow(0.001, dt); // fast response, short memory
+    this.scrubSpeed = p ? this.scrubSpeed + (speed - this.scrubSpeed) * k : 0;
+    const third = p ? p.x / window.innerWidth : 0.5;
+    const side = third < 0.3 ? -1 : third > 0.7 ? 1 : 0;
+    g.setScrub(Math.min(1, this.scrubSpeed / 1.0), side);
   }
 
   private cycleCamera(): void {
@@ -201,6 +307,8 @@ export class Controls {
   private press(id: string, fn: () => void): void {
     $(id).addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      this.sound.click();
+      haptics.tick();
       fn();
     });
   }
@@ -277,9 +385,6 @@ export class Controls {
     $('weight-label').textContent = g.weight.label;
     $('btn-turn-cw').classList.toggle('on', g.turn === 'cw');
     $('btn-turn-ccw').classList.toggle('on', g.turn === 'ccw');
-    $('btn-side-l').classList.toggle('on', g.sweepSide === -1);
-    $('btn-side-c').classList.toggle('on', g.sweepSide === 0);
-    $('btn-side-r').classList.toggle('on', g.sweepSide === 1);
     $('btn-concede').style.display = g.lsd ? 'none' : '';
 
     // message / ruling
@@ -315,6 +420,55 @@ export class Controls {
     }
     $('btn-sound').textContent = this.sound.muted ? '🔇' : '🔊';
 
+    if (phase !== 'charge') this.lastTick = -1;
+    // big score pop-up when an end is decided
+    if (phase !== this.lastPhase) {
+      if (phase === 'endScore' && g.endResult) {
+        const r = g.endResult;
+        const pop = $('score-pop');
+        pop.textContent = r.team < 0 ? 'Blank End' : `+${r.points} ${TEAM_NAMES[r.team]}`;
+        pop.dataset.team = String(r.team);
+        pop.classList.remove('show');
+        void pop.offsetWidth;
+        pop.classList.add('show');
+        this.sound.chime(r.team < 0 ? 0 : r.points);
+      }
+      this.lastPhase = phase;
+    }
+    // push delivery: power scale while holding, line gauge while gliding
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - this.steerKeys.last) / 1000);
+    this.steerKeys.last = now;
+    if (phase === 'glide' && (this.steerKeys.left || this.steerKeys.right)) {
+      this.steerKeys.value += (this.steerKeys.right ? 1 : 0) * 1.6 * dt - (this.steerKeys.left ? 1 : 0) * 1.6 * dt;
+      g.steer(this.steerKeys.value);
+    }
+    if (phase === 'charge' || phase === 'glide') {
+      const key = g.powerScale.map((t) => t.label).join() + g.weightIndex;
+      if (key !== this.scaleKey) {
+        this.scaleKey = key;
+        const named = new Set(['Guard', 'Tee / Button', 'Hack', 'Peel']);
+        $('power-ticks').innerHTML = g.powerScale
+          .map((t) => `<i style="left:${(t.pos * 100).toFixed(1)}%"></i>${named.has(t.label) ? `<span style="left:${(t.pos * 100).toFixed(1)}%">${t.label.replace(' / Button', '')}</span>` : ''}`)
+          .join('');
+      }
+      const tick = g.powerScale.filter((t) => t.pos <= g.power).length;
+      if (phase === 'charge' && tick !== this.lastTick) {
+        if (this.lastTick >= 0 && tick > this.lastTick) haptics.tick();
+        this.lastTick = tick;
+      }
+      $('power-fill').style.width = `${(g.power * 100).toFixed(1)}%`;
+      $('power-target').style.left = `${(g.targetPower * 100).toFixed(1)}%`;
+      $('power-label').textContent = g.power > 0.01 ? g.powerLabel : `Ansage: ${g.weight.label}`;
+      if (phase === 'charge') {
+        $('push-title').textContent = 'Gedrückt halten = Gewicht aufbauen · nach oben wischen = abstoßen';
+      } else {
+        const gl = g.glide;
+        $('push-title').textContent = gl.u >= gl.releaseAt ? 'Jetzt loslassen – vor der roten Linie!' : 'Seitlich ziehen: Stein auf der Linie halten';
+        $('line-marker').style.left = `${50 + g.lineOffset * 50}%`;
+      }
+    }
+
     // swipe gesture: live pace indicator
     if (phase === 'gesture') {
       $('pace-marker').style.left = `${50 + g.gesturePace * 50}%`;
@@ -346,21 +500,33 @@ export class Controls {
     if (phase === 'replay') $('hud-speed').textContent = `${g.speed.toFixed(2)} m/s`;
     if (phase === 'running') {
       $('hud-speed').textContent = `${g.speed.toFixed(2)} m/s`;
-      $('hud-call').textContent = g.call;
-      for (let k = 0; k < 2; k++) {
-        const pad = $(`pad-sweep-${k}`);
-        const i = g.sweepIntensity(k);
-        pad.style.setProperty('--level', String(i));
-        pad.classList.toggle('on', i > 0 && g.sweeperActive(k));
-        pad.classList.toggle('blocked', i > 0 && !g.sweeperActive(k));
-        const fatigue = g.world.sweepers.state[k].fatigue;
-        $(`fatigue-${k}`).style.width = `${Math.round((1 - fatigue / SWEEP.fatigueMax) * 100)}%`;
+      if (g.call !== this.lastCall) {
+        this.lastCall = g.call;
+        const call = $('hud-call');
+        call.textContent = g.call;
+        call.classList.remove('pop');
+        void call.offsetWidth; // restart the animation
+        call.classList.add('pop');
       }
+      this.updateScrub(dt);
+      const level = Math.max(g.sweepIntensity(0), g.sweepIntensity(1));
+      $('scrub-fill').style.width = `${Math.round(level * 100)}%`;
+      $('scrub-bar').classList.toggle('hard', level >= 0.85);
+      const st = g.world.sweepers.state;
+      const fresh = 1 - Math.max(st[0].fatigue, st[1].fatigue) / SWEEP.fatigueMax;
+      $('fatigue-fill').style.width = `${Math.round(fresh * 100)}%`;
+      const side = g.scrub.intensity > 0 ? g.scrub.side : g.sweepSide;
+      $('scrub-hint').textContent =
+        level > 0
+          ? `${level >= 0.85 ? 'Hart' : 'Locker'} wischen${side < 0 ? ' · linke Seite' : side > 0 ? ' · rechte Seite' : ''}`
+          : 'Vor dem Stein hin und her reiben = wischen · schneller = härter';
       const skip = $('pad-skip');
       skip.style.display = g.skipMaySweep ? '' : 'none';
       skip.textContent = `Skip ${TEAM_NAMES[1 - g.team]} wischt (L)`;
       skip.classList.toggle('on', g.sweeperActive(2));
     } else {
+      this.scrubSpeed = 0;
+      this.scrubDist = 0;
       if (phase !== 'replay') $('hud-speed').textContent = '';
       $('hud-call').textContent = '';
       $('pad-skip').style.display = 'none';

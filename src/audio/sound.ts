@@ -89,6 +89,39 @@ export class Sound {
     osc.stop(t + 0.1);
   }
 
+  /** Short tone (interface feedback). */
+  private blip(freq: number, at: number, dur: number, gain: number): void {
+    const ctx = this.ctx!;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(gain, at + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, at + dur);
+    osc.connect(g).connect(this.master);
+    osc.start(at);
+    osc.stop(at + dur + 0.02);
+  }
+
+  /** Button press. */
+  click(): void {
+    if (!this.ctx || this.muted) return;
+    this.blip(660, this.ctx.currentTime, 0.06, 0.12);
+  }
+
+  /** End decided: a rising chime, one note per point (blank end: a single low note). */
+  chime(points: number): void {
+    if (!this.ctx || this.muted) return;
+    const t = this.ctx.currentTime;
+    if (points <= 0) {
+      this.blip(330, t, 0.5, 0.2);
+      return;
+    }
+    const notes = [523, 659, 784, 1047, 1319, 1568, 2093, 2637];
+    for (let i = 0; i < Math.min(points + 1, notes.length); i++) this.blip(notes[i], t + i * 0.11, 0.45, 0.22);
+  }
+
   private say(text: string): void {
     if (!this.voice || !('speechSynthesis' in window)) return;
     const u = new SpeechSynthesisUtterance(text.replace('!', ''));
@@ -112,8 +145,8 @@ export class Sound {
     for (const s of game.viewWorld.stones) {
       if (s.inPlay && s.moving) speed = Math.max(speed, Math.sqrt(s.vx * s.vx + s.vy * s.vy));
     }
-    if (game.phase !== 'running' && game.phase !== 'replay' && game.phase !== 'slide' && game.phase !== 'gesture') speed = 0;
-    else if (game.phase === 'slide' || game.phase === 'gesture') speed = 1.6; // sliding out of the hack
+    if (game.phase !== 'running' && game.phase !== 'replay' && game.phase !== 'slide' && game.phase !== 'gesture' && game.phase !== 'glide') speed = 0;
+    else if (game.phase !== 'running' && game.phase !== 'replay') speed = 1.6; // sliding out of the hack
     this.rumbleGain.gain.setTargetAtTime(Math.min(0.5, speed * 0.16), t, 0.08);
     this.rumbleFilter.frequency.setTargetAtTime(90 + speed * 150, t, 0.08);
 
