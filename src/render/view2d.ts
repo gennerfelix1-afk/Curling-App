@@ -56,6 +56,11 @@ export class View2D implements GameView {
     return this.top + (this.h - this.top - this.bottom) / 2;
   }
 
+  setInsets(top: number, bottom: number): void {
+    this.top = top;
+    this.bottom = bottom;
+  }
+
   /** Screen → sheet coordinates (for aiming). */
   toSheet(px: number, py: number): { x: number; y: number } {
     return {

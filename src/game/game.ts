@@ -160,6 +160,8 @@ const HOLD_INTENSITY = 0.6;
 const TAP_BOOST = 0.2;
 const BOOST_DECAY = 0.8; // per second
 const SETTLE_PAUSE = 1.2; // seconds before the next stone
+/** Slide progress at which the stone is let go automatically (beginner / club). */
+const HOG_SAFETY = 0.97;
 
 /**
  * Game flow for single throws (phase 4: no rules yet). Pure logic – no DOM. Time advances only
@@ -466,6 +468,11 @@ export class Game {
     if (this.phase === 'charge') this.push.charging = true;
   }
 
+  /** The finger starts to move for the push-off: the weight stops building up right now. */
+  holdPower(): void {
+    if (this.phase === 'charge') this.push.charging = false;
+  }
+
   /** Push off: the weight is fixed and the stone starts to glide. */
   pushOff(): void {
     if (this.phase !== 'charge' || this.push.power < 0.02) return;
@@ -522,7 +529,17 @@ export class Game {
     // sheet x grows to the thrower's right when playing towards +y
     this.lineDev = this.lineOffset * this.dir;
     this.placeSlidingStone();
-    if (this.slideU >= 1 || (p.lifted && this.slideU >= this.releaseU)) this.release();
+    if (p.lifted && this.slideU >= this.releaseU) {
+      this.release();
+      return;
+    }
+    // still holding at the hog line: a professional loses the stone (R5); on the easier levels the
+    // stone is let go automatically just in time
+    if (this.options.difficulty !== 'pro' && this.slideU >= HOG_SAFETY) {
+      this.release();
+      return;
+    }
+    if (this.slideU >= 1) this.release();
   }
 
   // ───────────── swipe gesture delivery ─────────────
