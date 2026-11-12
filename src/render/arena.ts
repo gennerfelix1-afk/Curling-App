@@ -111,6 +111,54 @@ function banner(text: string, bg: string, fg: string): THREE.CanvasTexture {
   return t;
 }
 
+/**
+ * All markings of a sheet (houses, tee, back, hog and centre lines) painted into one texture on
+ * the ice. Separate flat meshes lying a fraction of a millimetre above the ice flicker or break up
+ * on phone GPUs (limited depth precision) – a texture cannot.
+ * Canvas top = far end of the sheet (+y), left = -x.
+ */
+export function sheetMarkings(dim = false): THREE.CanvasTexture {
+  const W = SHEET.width;
+  const L = SHEET.length;
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 4096;
+  const ctx = c.getContext('2d')!;
+  const sx = c.width / W;
+  const sy = c.height / L;
+  const px = (x: number): number => (x + W / 2) * sx;
+  const py = (y: number): number => (L / 2 - y) * sy;
+  ctx.fillStyle = '#f2f8fc';
+  ctx.fillRect(0, 0, c.width, c.height);
+  const tee = SHEET.teeToTee / 2;
+  const colors = dim ? ['#3f7fbf', '#f2f8fc', '#cf4a55', '#f2f8fc'] : ['#1c64b0', '#f2f8fc', '#c8202f', '#f2f8fc'];
+  for (const d of [1, -1]) {
+    SHEET.houseRadii.forEach((r, i) => {
+      ctx.fillStyle = colors[i];
+      ctx.beginPath();
+      ctx.ellipse(px(0), py(d * tee), r * sx, r * sy, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    const line = (y: number, w: number, color: string): void => {
+      ctx.fillStyle = color;
+      ctx.fillRect(0, py(y) - (w * sy) / 2, c.width, Math.max(1.5, w * sy));
+    };
+    line(d * tee, 0.013, '#33475b');
+    line(d * (tee + SHEET.teeToBackLine - 0.0065), 0.013, '#33475b');
+    // hog line: inner edge at teeToHog in front of the tee, band towards the near end
+    line(d * (tee - SHEET.teeToHog - SHEET.hogLineWidth / 2), SHEET.hogLineWidth, dim ? '#d0646c' : '#c8202f');
+    // hack line
+    line(d * (tee + SHEET.teeToHack), 0.013, '#33475b');
+  }
+  ctx.fillStyle = '#33475b';
+  const cl = tee + SHEET.teeToHack;
+  ctx.fillRect(px(0) - Math.max(0.75, 0.0065 * sx), py(cl), Math.max(1.5, 0.013 * sx), py(-cl) - py(cl));
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
 export interface Arena {
   /** Objects that can be hidden on weak devices. */
   detail: THREE.Object3D[];
@@ -135,7 +183,8 @@ export function buildArena(scene: THREE.Scene): Arena {
   const pebble = pebbleNormalMap();
   pebble.repeat.set(W / 0.45, L / 0.45);
   const iceMaterial = new THREE.MeshStandardMaterial({
-    color: 0xf2f8fc,
+    color: 0xffffff,
+    map: sheetMarkings(),
     roughness: 0.2,
     metalness: 0,
     normalMap: pebble,
@@ -151,23 +200,14 @@ export function buildArena(scene: THREE.Scene): Arena {
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.03;
   scene.add(floor);
-  const sideIce = new THREE.MeshStandardMaterial({ color: 0xe6eff5, roughness: 0.3 });
+  const sideIce = new THREE.MeshStandardMaterial({ color: 0xeef3f6, roughness: 0.3, map: sheetMarkings(true) });
   const boardMat = new THREE.MeshStandardMaterial({ color: 0x1d4f7a, roughness: 0.6 });
-  const ring = [0x1c64b0, 0xeef5fa, 0xc8202f, 0xeef5fa].map((c) => new THREE.MeshBasicMaterial({ color: c }));
   for (const side of [-1, 1]) {
     const x = side * (W + 0.45);
     const sheet = new THREE.Mesh(new THREE.PlaneGeometry(W, L), sideIce);
     sheet.rotation.x = -Math.PI / 2;
     sheet.position.set(x, -0.005, 0);
     scene.add(sheet);
-    for (const end of [-1, 1]) {
-      SHEET.houseRadii.forEach((r, i) => {
-        const m = new THREE.Mesh(new THREE.CircleGeometry(r, 40), ring[i]);
-        m.rotation.x = -Math.PI / 2;
-        m.position.set(x, -0.004 + i * 0.0004, (end * SHEET.teeToTee) / 2);
-        scene.add(m);
-      });
-    }
     // outer divider of the neighbouring sheet
     const div = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.14, L), boardMat);
     div.position.set(side * (W * 1.5 + 0.52), 0.07, 0);

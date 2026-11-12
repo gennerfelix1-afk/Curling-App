@@ -131,8 +131,29 @@ describe('push delivery: hold, push off, steer, let go', () => {
     expect(g.current!.inPlay).toBe(true);
   });
 
-  it('holding on until the hog line loses the stone (hog line violation)', () => {
+  it('beginners who hold on too long get the stone released automatically just before the hog line', () => {
     const g = newGame({ delivery: 'push' });
+    charge(g, g.targetPower);
+    runUntil(g, () => g.phase !== 'glide', 10);
+    expect(g.phase).toBe('running');
+    expect(g.current!.inPlay).toBe(true);
+    expect(g.current!.y).toBeLessThan(nearHogY(1));
+    expect(g.message).not.toMatch(/Hog-Line-Verletzung/);
+  });
+
+  it('the weight stops building up as soon as the finger starts the push-off', () => {
+    const g = newGame({ delivery: 'push' });
+    g.tap();
+    g.pushStart();
+    g.update(0.5);
+    g.holdPower();
+    const p = g.power;
+    g.update(0.5);
+    expect(g.power).toBe(p);
+  });
+
+  it('a pro who holds on until the hog line loses the stone (hog line violation)', () => {
+    const g = newGame({ delivery: 'push', difficulty: 'pro' });
     charge(g, g.targetPower);
     runUntil(g, () => g.phase !== 'glide', 10);
     expect(g.message).toMatch(/Hog-Line-Verletzung/);

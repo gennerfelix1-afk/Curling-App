@@ -60,6 +60,27 @@ const shell = new Shell(sound, start);
 // automation / deep links: ?autostart=ai|hotseat|draw|takeout|ice
 if (params.has('autostart')) start(params.get('autostart') || 'ai');
 
+/**
+ * The 3D view fills the space between the HUD and the control panel that is visible right now.
+ * Measured from the page, because the panels differ per phase, device and language.
+ */
+let insetTop = 0;
+let insetBottom = 0;
+function layoutInsets(): void {
+  const hud = document.getElementById('hud')!;
+  let bottom = 0;
+  for (const p of document.querySelectorAll<HTMLElement>('.panel')) {
+    if (p.offsetParent !== null || getComputedStyle(p).display !== 'none') {
+      if (getComputedStyle(p).display !== 'none') bottom = Math.max(bottom, p.offsetHeight);
+    }
+  }
+  const top = hud.offsetHeight;
+  // follow the panel smoothly, so the picture does not jump between phases
+  insetTop = top;
+  insetBottom = insetBottom === 0 ? bottom : insetBottom + (bottom - insetBottom) * 0.25;
+  view.setInsets(insetTop, Math.round(insetBottom));
+}
+
 function resize(): void {
   view.resize(window.innerWidth, window.innerHeight);
 }
@@ -76,6 +97,7 @@ function frame(now: number): void {
     fx.update(game, view, dt);
     game.update(dt * fx.timeScale); // brief slow motion on big hits
   }
+  layoutInsets();
   view.draw(game, dt);
   sound.update(game, dt);
   controls.refresh();

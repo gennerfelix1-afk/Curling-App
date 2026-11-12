@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Game } from '../game/game';
 import { ICE, SHEET, STONE, SWEEP } from '../physics/config';
-import { backLineY, farHogY, hackY, HALF_LENGTH, HALF_WIDTH, nearHogY, teeY, type Dir } from '../physics/sheet';
+import { farHogY, hackY, HALF_LENGTH, HALF_WIDTH, nearHogY, teeY, type Dir } from '../physics/sheet';
 import type { Stone } from '../physics/stone';
 import { World } from '../physics/world';
 import { buildArena, graniteMap, setupEnvironment, type Arena } from './arena';
@@ -16,16 +16,20 @@ const UP = new THREE.Vector3(0, 1, 0);
 const V = (x: number, y: number, h = 0): THREE.Vector3 => new THREE.Vector3(x, h, -y);
 
 function flat(geo: THREE.BufferGeometry, color: number, h: number, opacity = 1): THREE.Mesh {
-  // opaque markings lie "in the ice": glossy like it and able to receive the stones' shadows
-  const mat =
-    opacity < 1
-      ? new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
-      : new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0, envMapIntensity: 0.35, depthWrite: false });
+  // overlays on the ice: drawn after it with a depth offset, so they never fight with the ice
+  const mat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: opacity < 1,
+    opacity,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -4,
+    polygonOffsetUnits: -4,
+  });
   const m = new THREE.Mesh(geo, mat);
-  m.receiveShadow = opacity >= 1;
   m.rotation.x = -Math.PI / 2;
   m.position.y = h;
-  m.renderOrder = Math.round(h * 10000);
+  m.renderOrder = 10 + Math.round(h * 1000);
   return m;
 }
 
@@ -50,8 +54,6 @@ export class View3D implements GameView {
   private h = 1;
   private top = 96;
   private bottom = 150;
-  /** Taller control panel while delivering (power scale / line gauge). */
-  private readonly bottomDelivery = 235;
 
   private camPos = new THREE.Vector3(0, 12, 0);
   private camTarget = new THREE.Vector3();
@@ -149,22 +151,8 @@ export class View3D implements GameView {
     const sc = this.scene;
     // ice, hall and stands come from the arena; here: the markings of the playing sheet
 
-    const ringColors = [0x1c64b0, 0xeaf3f9, 0xc8202f, 0xeaf3f9];
+    // the markings are painted into the ice texture (arena.ts → sheetMarkings)
     for (const d of [1, -1] as Dir[]) {
-      const ty = teeY(d);
-      SHEET.houseRadii.forEach((r, i) => {
-        const m = flat(new THREE.CircleGeometry(r, 72), ringColors[i], 0.001 + i * 0.0004);
-        m.position.set(0, m.position.y, -ty);
-        sc.add(m);
-      });
-      const line = (y: number, width: number, color: number): void => {
-        const m = flat(new THREE.PlaneGeometry(SHEET.width, width), color, 0.003);
-        m.position.z = -y;
-        sc.add(m);
-      };
-      line(ty, 0.02, 0x33475b);
-      line(backLineY(d), 0.02, 0x33475b);
-      line(farHogY(d) - d * (SHEET.hogLineWidth / 2), SHEET.hogLineWidth, 0xc8202f);
       // hack
       for (const side of [-1, 1]) {
         const hack = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.05, 0.1), new THREE.MeshStandardMaterial({ color: 0x1b1b1b }));
@@ -176,8 +164,6 @@ export class View3D implements GameView {
       end.position.copy(V(0, d * (HALF_LENGTH + 0.075), 0.07));
       sc.add(end);
     }
-    const centre = flat(new THREE.PlaneGeometry(0.02, SHEET.teeToTee + 2 * SHEET.teeToHack), 0x33475b, 0.0032);
-    sc.add(centre);
     for (const side of [-1, 1]) {
       const board = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.14, SHEET.length), new THREE.MeshStandardMaterial({ color: 0x6b4423 }));
       board.position.set(side * (HALF_WIDTH + 0.075), 0.07, 0);
@@ -195,7 +181,7 @@ export class View3D implements GameView {
     this.heatTex.minFilter = THREE.LinearFilter;
     const m = new THREE.Mesh(
       new THREE.PlaneGeometry(ice.nx * ice.cell, ice.ny * ice.cell),
-      new THREE.MeshBasicMaterial({ map: this.heatTex, transparent: true, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ map: this.heatTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }),
     );
     m.rotation.x = -Math.PI / 2;
     // texture row 0 = sheet y0 (most negative y) = +Z in three → flip V
@@ -291,13 +277,10 @@ export class View3D implements GameView {
   }
 
   private buildMarkers(): void {
-    // the skip's broom
+    // target mark of the skip's broom (the broom itself is held by the skip figure)
     const ring = flat(new THREE.RingGeometry(0.1, 0.14, 32), 0x0a7d3b, 0.006);
-    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.3, 8), new THREE.MeshStandardMaterial({ color: 0x0a7d3b }));
-    stick.position.y = 0.65;
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.04, 0.06), new THREE.MeshStandardMaterial({ color: 0x0a7d3b }));
-    head.position.y = 0.02;
-    this.broom.add(ring, stick, head);
+    const dot = flat(new THREE.CircleGeometry(0.035, 16), 0x0a7d3b, 0.006);
+    this.broom.add(ring, dot);
     this.scene.add(this.broom);
 
     const dashed = new THREE.LineDashedMaterial({ color: 0x14783c, dashSize: 0.18, gapSize: 0.14, depthTest: false });
@@ -324,13 +307,8 @@ export class View3D implements GameView {
         new THREE.MeshStandardMaterial({ color: k > 1 ? 0x7a1f6b : 0x12354d }),
       );
       pad.position.y = 0.02;
-      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 1.25, 8), new THREE.MeshStandardMaterial({ color: 0x222222 }));
-      // handle leaning back towards the sweeper, who walks beside the path
-      const side = k % 2 ? 1 : -1;
-      shaft.position.set(side * 0.16, 0.5, 0.28);
-      shaft.rotation.order = 'ZXY';
-      shaft.rotation.set(0.5, 0, -side * 0.3);
-      g.add(pad, shaft);
+      // the stick is drawn by the figures (from the head through the sweeper's hands)
+      g.add(pad);
       this.scene.add(g);
       this.brushes.push(g);
     }
@@ -503,8 +481,13 @@ export class View3D implements GameView {
     }
   }
 
+  /** Screen area covered by the HUD (top) and the control panel (bottom), measured from the page. */
+  setInsets(top: number, bottom: number): void {
+    this.top = top;
+    this.bottom = bottom;
+  }
+
   draw(game: Game, dt: number): void {
-    this.bottom = game.phase === 'charge' || game.phase === 'glide' ? this.bottomDelivery : 150;
     this.adaptResolution(dt);
     this.updateCamera(game, dt);
     this.updateHeat(game);

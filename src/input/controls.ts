@@ -55,7 +55,9 @@ export class Controls {
     const pushMove = (e: PointerEvent): void => {
       const h = this.hold_;
       if (!h || e.pointerId !== h.id) return;
-      if (this.game.phase === 'charge' && h.y - e.clientY > 28) {
+      // the first move upwards freezes the weight – what you see when you start the swipe is what you get
+      if (this.game.phase === 'charge' && h.y - e.clientY > 6) this.game.holdPower();
+      if (this.game.phase === 'charge' && h.y - e.clientY > 18) {
         this.game.pushOff();
         h.steerX = e.clientX;
       }
@@ -174,8 +176,13 @@ export class Controls {
     this.press('btn-call-off', () => this.game.setSweepCall('off'));
     $('btn-concede').addEventListener('click', () => {
       const g = this.game;
-      const q = getLang() === 'en' ? `${t(TEAM_NAMES[g.team])} concedes the match?` : `${TEAM_NAMES[g.team]} gibt die Partie auf?`;
-      if (confirm(q)) g.concede(g.team);
+      // against the AI it is always the player who gives up
+      const team = g.isAI(1) && !g.isAI(0) ? 0 : g.team;
+      const q = getLang() === 'en' ? `${t(TEAM_NAMES[team])} concedes the match?` : `${TEAM_NAMES[team]} gibt die Partie auf?`;
+      if (confirm(q)) {
+        $('pause').classList.remove('open');
+        g.concede(team);
+      }
     });
     $('decision-options').addEventListener('click', (e) => {
       const id = (e.target as HTMLElement).dataset.choice;
@@ -468,7 +475,7 @@ export class Controls {
         $('push-title').textContent = t('Gedrückt halten = Gewicht aufbauen · nach oben wischen = abstoßen');
       } else {
         const gl = g.glide;
-        $('push-title').textContent = t(gl.u >= gl.releaseAt ? 'Jetzt loslassen – vor der roten Linie!' : 'Seitlich ziehen: Stein auf der Linie halten');
+        $('push-title').textContent = t(gl.u >= gl.releaseAt - 0.12 ? 'Jetzt loslassen – vor der roten Linie!' : 'Seitlich ziehen: Stein auf der Linie halten');
         $('line-marker').style.left = `${50 + g.lineOffset * 50}%`;
       }
     }
