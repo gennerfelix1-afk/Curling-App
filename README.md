@@ -86,6 +86,9 @@ Ablauf pro Stein: **Besen setzen → Drehung → Gewicht → Abgabe → Wischen*
 - **Spielgefühl:** Zeitlupe, Eis-Spritzer und Kamera-Wackeln bei harten Treffern, Vibration bei Abstoßen, Loslassen
   und Treffern, Punkte-Einblendung mit Ton am Ende jedes Ends.
 - Die gestrichelte Linie zeigt den geschätzten Weg **ohne** Wischen (Anfänger-Hilfe).
+- **Halle:** Eis, Granit, Tribüne mit Zuschauern, Banner und Hallenlicht werden komplett im Code erzeugt (keine
+  Grafikdateien). Kommt das Gerät nicht mit, senkt die Ansicht erst die Auflösung und schaltet dann Schatten und
+  Zuschauer ab; `?quality=high` erzwingt alle Details.
 - `?seed=123` in der URL legt Eis und Zufall fest (reproduzierbare Partie); `?view=2d` schaltet auf die einfache
   2D-Draufsicht (auch automatisch, wenn WebGL fehlt).
 
