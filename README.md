@@ -52,7 +52,7 @@ Ablauf pro Stein: **Besen setzen → Drehung → Gewicht → Abgabe → Wischen*
 
 | Aktion | Maus / Tastatur | Touch |
 |---|---|---|
-| Besen (Zielpunkt) setzen | aufs Eis klicken / ziehen | aufs Eis tippen / ziehen |
+| Besen (Zielpunkt) setzen | seitlich ziehen = verschieben, klicken = setzen | seitlich ziehen = verschieben, tippen = setzen |
 | Drehung: Out-Turn ↺ / In-Turn ↻ | `Q` / `E` oder `←` / `→` | Buttons |
 | Gewicht leichter / schwerer | `S` / `W` oder `↓` / `↑` | `−` / `+` |
 | **Abgabe** (Standard): Gewicht aufbauen | `Leertaste` gedrückt halten | „Abgabe“ tippen, dann Finger aufs Eis legen und halten |
@@ -62,8 +62,7 @@ Ablauf pro Stein: **Besen setzen → Drehung → Gewicht → Abgabe → Wischen*
 | Alternative Abgabe „Timing-Anzeigen“ (im Menü) | `Leertaste` / `Enter` (3×) | „Abgabe“, dann 2× auf die Anzeige tippen |
 | Abgabe per Wisch-Geste (im Menü wählbar, Standard auf Touch-Geräten) | „Abgabe“, dann mit der Maus nach oben ziehen und loslassen | „Abgabe“, dann nach oben wischen und loslassen |
 | Abbrechen (vor dem Abstoß) | `Esc` | „Abbrechen“ |
-| Wischen | `A` / `D` halten (Wischer 1 / 2), schnell wiederholt drücken = härter; oder mit der Maus reiben | mit dem Finger auf dem Eis hin und her reiben – schneller = härter |
-| Wischseite links / mittig / rechts | `1` / `2` / `3` | im linken / mittleren / rechten Drittel des Bildschirms reiben |
+| Wischen | `A` / `D` halten oder Maustaste gedrückt halten | Finger auf dem Bildschirm halten |
 | Skip des anderen Teams wischt (ab Tee Line) | `L` halten | Button „Skip … wischt“ |
 | Ansage an die Mitspieler (Wisch-Modus „auf Ansage“): HARD / Clean / Off | `H` / `J` / `K` | Buttons |
 | Kamera: Auto → Draufsicht → Übersicht | `C` | Button „Kamera“ |
@@ -81,9 +80,11 @@ Ablauf pro Stein: **Besen setzen → Drehung → Gewicht → Abgabe → Wischen*
   Wer an der roten Hog Line noch nicht losgelassen hat, verliert den Stein (Hog-Line-Verletzung).
 - **Timing-Anzeigen:** Die beiden Anzeigen bei der Abgabe bestimmen den Ausführungsfehler: je näher an der Mitte gestoppt, desto genauer
   stimmen Gewicht und Linie.
-- **Wischen durch Reiben:** Ein Finger steuert beide Wischer. Etwa eine Bildschirmbreite pro Sekunde ist volle
-  Intensität; hartes Dauerwischen ermüdet (Balken „Kraft der Wischer“). Jeder Strich ist als kurze Vibration spürbar
-  (Android; iPhones erlauben im Browser keine Vibration).
+- **Wischen:** Finger auf dem Bildschirm halten = beide Wischer wischen hart, loslassen = aufhören. Hartes
+  Dauerwischen ermüdet (Balken „Kraft der Wischer“).
+- **Rückmeldung:** Nach jedem Wurf eine Bewertung mit 0–3 Sternen (wie stark der Wurf die Lage verbessert hat), die
+  oben rechts angezeigte Zählung („Rot liegt 2“), farbige Ringe um die zählenden Steine und eine Leuchtspur hinter dem
+  Stein.
 - **Spielgefühl:** Zeitlupe, Eis-Spritzer und Kamera-Wackeln bei harten Treffern, Vibration bei Abstoßen, Loslassen
   und Treffern, Punkte-Einblendung mit Ton am Ende jedes Ends.
 - Die gestrichelte Linie zeigt den geschätzten Weg **ohne** Wischen (Anfänger-Hilfe).

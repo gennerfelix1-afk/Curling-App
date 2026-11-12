@@ -18,6 +18,7 @@ import {
   type EndScore,
   type ProtectedStone,
 } from '../rules/rules';
+import { evaluate } from '../ai/evaluate';
 import { IceBook } from '../ai/iceBook';
 import { AI_LEVELS, LIGHT_BIAS, Planner } from '../ai/planner';
 import type { Shot, ShotTarget } from '../ai/shots';
@@ -69,6 +70,19 @@ export interface ReplayState {
 }
 
 export const TEAM_NAMES = ['Rot', 'Gelb'] as const;
+
+/** Rating of one delivery: how much it improved the position for the team that played it. */
+export interface ThrowRating {
+  team: number;
+  human: boolean;
+  /** 0 = poor … 3 = excellent */
+  stars: number;
+  label: string;
+  /** Change of the position value (internal units). */
+  delta: number;
+  /** Counter so the display can tell two ratings apart. */
+  n: number;
+}
 
 /** A choice the non-offending team has to make after a rule violation. */
 export interface Decision {
@@ -246,6 +260,11 @@ export class Game {
   private aiExec: { speed: number; aimOffset: number } | null = null;
   private advisor: SweepAdvisor | null = null;
   private decisionT = 0;
+
+  /** How good the last delivery was for the team that played it (shown to the players). */
+  lastRating: ThrowRating | null = null;
+  /** Ratings of the human deliveries in this match (stars 0–3). */
+  readonly ratings: number[] = [];
 
   /** The last deliveries, newest last (for replays). */
   readonly history: ShotRecord[] = [];
@@ -1100,9 +1119,40 @@ export class Game {
     this.current = null;
   }
 
+  /** Value of a position for `team` with `left` stones still to come in this end. */
+  private positionValue(stones: readonly Stone[], team: number, left: number): number {
+    const m = this.match;
+    return evaluate(stones, {
+      dir: this.dir,
+      me: team,
+      hammer: m.hammer,
+      stonesLeft: left,
+      scoreDiff: m.total(team) - m.total(1 - team),
+      endsLeft: Math.max(0, m.ends - m.end),
+    });
+  }
+
+  /** Rate the delivery that just came to rest. */
+  private rateThrow(): void {
+    if (this.lsd || this.drill) return;
+    const team = this.team;
+    const before = this.positionValue(this.beforeShot, team, 16 - this.shot);
+    const after = this.positionValue(this.world.stones.filter((q) => q.inPlay), team, 15 - this.shot);
+    const lost = !this.current || !this.current.inPlay;
+    const delta = after - before;
+    let stars = delta >= 0.35 ? 3 : delta >= 0.1 ? 2 : delta >= -0.05 ? 1 : 0;
+    // a stone that did nothing and is gone is never better than "okay"
+    if (lost && delta < 0.1) stars = Math.min(stars, 1);
+    const labels = ['Daneben', 'Okay', 'Guter Wurf', 'Super Wurf!'];
+    const human = !this.isAI(team);
+    this.lastRating = { team, human, stars, label: labels[stars], delta, n: (this.lastRating?.n ?? 0) + 1 };
+    if (human) this.ratings.push(stars);
+  }
+
   private settle(): void {
     this.phase = 'settled';
     this.settleT = 0;
+    this.rateThrow();
     if (this.recording) {
       this.recording.sweep = this.sweepLog.slice();
       this.history.push(this.recording);
@@ -1214,6 +1264,11 @@ export class Game {
       return;
     }
     this.current = null;
+    // the next team starts with the broom on the button, not where the other team aimed
+    if (this.shot + 1 < this.stonesPerEnd && this.match.teamForShot(this.shot + 1) !== this.match.teamForShot(this.shot)) {
+      this.aimX = 0;
+      this.aimY = teeY(this.dir);
+    }
     this.shot++;
     if (this.shot >= this.stonesPerEnd) {
       this.endResult = scoreEnd(this.world.stones, this.dir);

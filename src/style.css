@@ -192,8 +192,27 @@ body[data-phase='gameOver'] #panel-result { display: none; }
 /* compact controls on phones */
 @media (max-width: 520px) {
   #panel-aim { gap: 6px; padding-top: 8px; }
-  #panel-aim .hint { display: none; }
+  #panel-aim .hint { font-size: 11px; margin-top: -2px; }
   #panel-aim .group:first-child { flex-basis: 100%; justify-content: center; }
   #weight-label { min-width: 84px; }
 }
 #pause #btn-concede { background: none; border-color: rgba(200, 32, 47, 0.6); color: #ff8a93; }
+
+/* sweeping: big, simple feedback */
+#scrub-hint { font-size: 22px; font-weight: 800; letter-spacing: 0.5px; }
+#panel-sweep.sweeping #scrub-hint { color: #7fe0a6; animation: sweep-beat 0.32s ease-in-out infinite alternate; }
+@keyframes sweep-beat { from { transform: scale(1); } to { transform: scale(1.08); } }
+
+/* who is counting right now */
+#hud-shot { margin-left: auto; padding: 1px 8px; border-radius: 999px; font-weight: 700; font-size: 12px; background: rgba(255, 255, 255, 0.1); }
+#hud-shot[data-team='0'] { background: #d62839; color: #fff; }
+#hud-shot[data-team='1'] { background: #f2c230; color: #111; }
+#hud-shot:empty { display: none; }
+#hud-speed { margin-left: 8px; }
+/* rating after each throw */
+#rate-pop { position: fixed; left: 50%; top: 34%; transform: translate(-50%, -50%); text-align: center; pointer-events: none; display: none; z-index: 5; }
+#rate-pop .stars { font-size: 46px; letter-spacing: 6px; color: #ffd84d; text-shadow: 0 4px 18px rgba(0, 0, 0, 0.55); }
+#rate-pop .stars i { font-style: normal; color: rgba(255, 255, 255, 0.28); }
+#rate-pop .label { font-size: 30px; font-weight: 900; color: #fff; text-shadow: 0 4px 18px rgba(0, 0, 0, 0.7), 0 0 2px #000; }
+#rate-pop.show { display: block; animation: score-pop 1.7s cubic-bezier(0.2, 1.4, 0.4, 1) forwards; }
+#rate-pop[data-stars='0'] .label { color: #ff9aa2; }

@@ -2,6 +2,7 @@ import { RULES, SWEEP } from '../physics/config';
 import { TEAM_NAMES, type Game } from '../game/game';
 import type { Sound } from '../audio/sound';
 import { haptics } from './haptics';
+import { scoreEnd } from '../rules/rules';
 import { getLang, t } from '../ui/i18n';
 import type { CameraMode, GameView } from '../render/view';
 
@@ -28,20 +29,38 @@ export class Controls {
   private hold_: { id: number; x: number; y: number; steerX: number } | null = null;
   private steerKeys = { left: false, right: false, value: 0, last: 0 };
   private scaleKey = '';
-  /** Sweeping gesture: the rubbing finger, distance rubbed since the last frame, smoothed speed. */
-  private scrubPointer: { id: number; x: number; y: number; dir: number } | null = null;
-  private scrubDist = 0;
-  private scrubSpeed = 0;
+  private aimDrag: { x: number; aimX: number; moved: boolean; step: number } | null = null;
+  /** Sweeping: fingers currently on the screen, and the time to the next felt brush stroke. */
+  private sweepPointers = new Set<number>();
+  private strokeT = 0;
   private lastTick = -1;
   private lastCall = '';
   private lastPhase = '';
+  private lastRating = 0;
+  private shotKey = '';
 
   constructor(public game: Game, private view: GameView, canvas: HTMLCanvasElement, private sound: Sound) {
-    // aiming on the ice
+    // aiming: drag sideways anywhere on the ice – the broom follows the movement (so the finger never
+    // covers it); a short tap puts the broom where you tapped
     const aim = (e: PointerEvent): void => {
+      const a = this.aimDrag;
+      if (!a) return;
+      const dx = e.clientX - a.x;
+      if (Math.abs(dx) > 6) a.moved = true;
+      if (!a.moved) return;
+      // one screen width moves the broom across ~2/3 of the sheet; screen right = thrower's right
+      const sheetX = a.aimX + (dx / window.innerWidth) * 3.2 * this.game.dir;
+      this.game.setAim(sheetX, this.game.aimY);
+      const step = Math.round(sheetX / 0.15);
+      if (step !== a.step) {
+        a.step = step;
+        haptics.tick();
+      }
+    };
+    const aimTap = (e: PointerEvent): void => {
       const r = canvas.getBoundingClientRect();
       const p = view.toSheet(e.clientX - r.left, e.clientY - r.top);
-      if (p) this.game.setAim(p.x, p.y);
+      if (p) this.game.setAim(p.x, this.game.aimY);
     };
     // swipe gesture: drag the stone up the screen and let go before the hog line
     const swipeMove = (e: PointerEvent): void => {
@@ -63,41 +82,21 @@ export class Controls {
       }
       if (this.game.phase === 'glide') this.game.steer((e.clientX - h.steerX) / (window.innerWidth * 0.3));
     };
-    // sweeping: rub the ice with a finger – the faster, the harder
+    // sweeping: finger on the screen = sweep, finger off = stop
     canvas.addEventListener('pointerdown', (e) => {
       if (this.game.phase !== 'running') return;
-      this.scrubPointer = { id: e.pointerId, x: e.clientX, y: e.clientY, dir: 0 };
+      this.sweepPointers.add(e.pointerId);
       try {
         canvas.setPointerCapture(e.pointerId);
       } catch {
         /* pointer already gone */
       }
     });
-    canvas.addEventListener('pointermove', (e) => {
-      const p = this.scrubPointer;
-      if (!p || e.pointerId !== p.id) return;
-      const dx = e.clientX - p.x;
-      const dy = e.clientY - p.y;
-      this.scrubDist += Math.sqrt(dx * dx + dy * dy);
-      // every change of direction is one brush stroke you can feel
-      const along = Math.abs(dx) > Math.abs(dy) ? dx : dy;
-      const dir = along > 2 ? 1 : along < -2 ? -1 : 0;
-      if (dir !== 0 && dir !== p.dir) {
-        if (p.dir !== 0) haptics.tick();
-        p.dir = dir;
-      }
-      p.x = e.clientX;
-      p.y = e.clientY;
-    });
-    const scrubEnd = (e: PointerEvent): void => {
-      if (this.scrubPointer && e.pointerId === this.scrubPointer.id) {
-        this.scrubPointer = null;
-        this.scrubSpeed = 0;
-        this.game.setScrub(0); // brush off the ice at once
-      }
+    const sweepEnd = (e: PointerEvent): void => {
+      this.sweepPointers.delete(e.pointerId);
     };
-    canvas.addEventListener('pointerup', scrubEnd);
-    canvas.addEventListener('pointercancel', scrubEnd);
+    canvas.addEventListener('pointerup', sweepEnd);
+    canvas.addEventListener('pointercancel', sweepEnd);
 
     canvas.addEventListener('pointerdown', (e) => {
       if (this.game.phase === 'charge') {
@@ -121,7 +120,7 @@ export class Controls {
       }
       if (this.game.phase !== 'aim') return;
       this.aimPointer = e.pointerId;
-      aim(e);
+      this.aimDrag = { x: e.clientX, aimX: this.game.aimX, moved: false, step: Math.round(this.game.aimX / 0.15) };
       try {
         canvas.setPointerCapture(e.pointerId);
       } catch {
@@ -134,7 +133,11 @@ export class Controls {
       pushMove(e);
     });
     const end = (e: PointerEvent): void => {
-      if (e.pointerId === this.aimPointer) this.aimPointer = -1;
+      if (e.pointerId === this.aimPointer) {
+        this.aimPointer = -1;
+        if (this.aimDrag && !this.aimDrag.moved) aimTap(e);
+        this.aimDrag = null;
+      }
       if (this.hold_ && e.pointerId === this.hold_.id) {
         this.hold_ = null;
         // lifting without a swipe pushes off as well; the stone then glides unsteered
@@ -290,22 +293,24 @@ export class Controls {
     });
   }
 
-  /** Turn the rubbing of the last frame into a sweeping intensity. */
+  /** Holding a finger on the screen sweeps hard; every brush stroke is felt as a short vibration. */
   private updateScrub(dt: number): void {
     const g = this.game;
     if (g.isAI(g.team) || g.options.sweepMode !== 'manual') {
       g.setScrub(0);
       return;
     }
-    const p = this.scrubPointer;
-    // rubbing speed in screen widths per second; about one width per second is full intensity
-    const speed = dt > 0 ? this.scrubDist / dt / window.innerWidth : 0;
-    this.scrubDist = 0;
-    const k = 1 - Math.pow(0.001, dt); // fast response, short memory
-    this.scrubSpeed = p ? this.scrubSpeed + (speed - this.scrubSpeed) * k : 0;
-    const third = p ? p.x / window.innerWidth : 0.5;
-    const side = third < 0.3 ? -1 : third > 0.7 ? 1 : 0;
-    g.setScrub(Math.min(1, this.scrubSpeed / 1.0), side);
+    const on = this.sweepPointers.size > 0 && g.current?.moving === true;
+    g.setScrub(on ? 1 : 0);
+    if (on) {
+      this.strokeT -= dt;
+      if (this.strokeT <= 0) {
+        this.strokeT = 0.16;
+        haptics.tick();
+      }
+    } else {
+      this.strokeT = 0;
+    }
   }
 
   private cycleCamera(): void {
@@ -430,6 +435,46 @@ export class Controls {
     $('btn-sound').textContent = t(this.sound.muted ? '🔇' : '🔊');
 
     if (phase !== 'charge') this.lastTick = -1;
+
+    // rating of the delivery that just came to rest
+    const rt = g.lastRating;
+    if (rt && rt.n !== this.lastRating) {
+      this.lastRating = rt.n;
+      const pop = $('rate-pop');
+      pop.querySelector('.stars')!.innerHTML = '★'.repeat(rt.stars) + `<i>${'★'.repeat(3 - rt.stars)}</i>`;
+      pop.querySelector('.label')!.textContent = rt.human ? t(rt.label) : `${t(TEAM_NAMES[rt.team])}: ${t(rt.label)}`;
+      pop.dataset.stars = String(rt.stars);
+      pop.classList.remove('show');
+      void pop.offsetWidth;
+      pop.classList.add('show');
+      if (rt.stars === 3) {
+        this.sound.chime(2);
+        this.sound.applause(rt.human ? 0.9 : 0.5);
+        haptics.success();
+      } else if (rt.stars === 2) {
+        this.sound.applause(0.35);
+        haptics.pulse(30);
+      } else if (rt.stars === 0) {
+        this.sound.groan();
+        haptics.pulse([40, 60, 40]);
+      }
+    }
+
+    // who is counting right now
+    let shotText = '';
+    let shotTeam = '';
+    if (!g.lsd && !g.drill && phase !== 'running' && phase !== 'gameOver') {
+      const sc = scoreEnd(g.world.stones, g.dir);
+      shotText = sc.team < 0 ? t('House leer') : `${t(TEAM_NAMES[sc.team])} ${t('liegt')} ${sc.points}`;
+      shotTeam = String(sc.team);
+    }
+    const key = shotText + shotTeam;
+    if (key !== this.shotKey) {
+      this.shotKey = key;
+      const el = $('hud-shot');
+      el.textContent = shotText;
+      el.dataset.team = shotTeam;
+    }
     // big score pop-up when an end is decided
     if (phase !== this.lastPhase) {
       if (phase === 'endScore' && g.endResult) {
@@ -526,18 +571,14 @@ export class Controls {
       const st = g.world.sweepers.state;
       const fresh = 1 - Math.max(st[0].fatigue, st[1].fatigue) / SWEEP.fatigueMax;
       $('fatigue-fill').style.width = `${Math.round(fresh * 100)}%`;
-      const side = g.scrub.intensity > 0 ? g.scrub.side : g.sweepSide;
-      $('scrub-hint').textContent =
-        level > 0
-          ? `${level >= 0.85 ? 'Hart' : 'Locker'} wischen${side < 0 ? ' · linke Seite' : side > 0 ? ' · rechte Seite' : ''}`
-          : 'Vor dem Stein hin und her reiben = wischen · schneller = härter';
+      $('scrub-hint').textContent = t(level > 0 ? 'Wischen!' : 'Finger halten = wischen');
+      $('panel-sweep').classList.toggle('sweeping', level > 0);
       const skip = $('pad-skip');
       skip.style.display = g.skipMaySweep ? '' : 'none';
       skip.textContent = t(`Skip ${TEAM_NAMES[1 - g.team]} wischt (L)`);
       skip.classList.toggle('on', g.sweeperActive(2));
     } else {
-      this.scrubSpeed = 0;
-      this.scrubDist = 0;
+      this.sweepPointers.clear();
       if (phase !== 'replay') $('hud-speed').textContent = t('');
       $('hud-call').textContent = t('');
       $('pad-skip').style.display = 'none';

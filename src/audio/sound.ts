@@ -145,6 +145,26 @@ export class Sound {
     for (let i = 0; i < Math.min(points + 1, notes.length); i++) this.blip(notes[i], t + i * 0.11, 0.45, 0.22);
   }
 
+  /** Disappointed crowd: a low, falling murmur. */
+  groan(): void {
+    const ctx = this.ctx;
+    if (!ctx || this.muted) return;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'bandpass';
+    lp.Q.value = 1.2;
+    lp.frequency.setValueAtTime(520, t);
+    lp.frequency.exponentialRampToValueAtTime(260, t + 0.9);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.35, t + 0.12);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 1.1);
+    src.connect(lp).connect(g).connect(this.master);
+    src.start(t, Math.random(), 1.2);
+  }
+
   /** Applause of the crowd (end scored for the player, match won): many claps, synthesised once. */
   applause(strength = 1): void {
     const ctx = this.ctx;
