@@ -58,7 +58,8 @@ Curling, wie es sich wirklich spielt. Jeder Stein folgt einer Physik, die an ech
 curlt spät, Takeouts laufen gerader, und Wischen trägt ihn weiter und hält ihn auf der Linie.
 
 • Abgabe wie auf dem Eis: Kraft aufbauen, abstoßen, die Linie halten, loslassen
-• Wischen mit dem Finger – je schneller du reibst, desto härter
+• Wischen mit einem Finger: halten und der Stein läuft weiter und gerader
+• Bewertung jedes Wurfs mit Sternen, Applaus der Zuschauer
 • Der Skip ruft: „HARD!“, „Off!“, „Line!“
 • Komplette Regeln: Free Guard Zone, No-Tick, Hammer, Last Stone Draw, Messung
 • KI-Gegner in vier Stärken, die mit echter Physik plant

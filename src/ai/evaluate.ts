@@ -61,7 +61,7 @@ export function evaluate(stones: readonly Stone[], sit: Situation): number {
   const sc = scoreEnd(stones, dir);
   const r = sc.team < 0 ? 0 : sc.team === me ? sc.points : -sc.points;
   // early in the end the current count means little – it is decided by the last stones
-  const played = 1 - sit.stonesLeft / 15;
+  const played = Math.max(0, Math.min(1, 1 - sit.stonesLeft / 15));
   const certainty = 0.15 + 0.85 * played * Math.sqrt(played);
   let v = endUtility(r, haveHammer, sit.scoreDiff, sit.endsLeft) * certainty;
   if (sit.stonesLeft === 0) return v;

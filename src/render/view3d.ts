@@ -1,15 +1,18 @@
 import * as THREE from 'three';
 import type { Game } from '../game/game';
 import { ICE, SHEET, STONE, SWEEP } from '../physics/config';
-import { farHogY, hackY, HALF_LENGTH, HALF_WIDTH, nearHogY, teeY, type Dir } from '../physics/sheet';
+import { hackY, HALF_LENGTH, HALF_WIDTH, nearHogY, teeY, type Dir } from '../physics/sheet';
 import type { Stone } from '../physics/stone';
 import { World } from '../physics/world';
-import { buildArena, graniteMap, setupEnvironment, type Arena } from './arena';
+import { scoreEnd } from '../rules/rules';
+import { buildArena, graniteMap, setupEnvironment } from './arena';
 import { Crew, type BrushPose } from './figures';
 import type { CameraMode, GameView } from './view';
 
 const TEAM_COLORS = [0xd62839, 0xf2c230];
 const FOV = 45;
+/** Player figures (procedural) – off until real animated models replace them. */
+const SHOW_FIGURES = false;
 const UP = new THREE.Vector3(0, 1, 0);
 
 /** Sheet (x, y) → three.js world: X = x, Y = up, Z = -y. */
@@ -58,11 +61,13 @@ export class View3D implements GameView {
   private camPos = new THREE.Vector3(0, 12, 0);
   private camTarget = new THREE.Vector3();
   private camInit = false;
+  /** Camera rig: target x, target y (sheet), distance, pitch – current and goal. */
+  private camState = new THREE.Vector4();
+  private camGoal = new THREE.Vector4();
   private sun!: THREE.DirectionalLight;
-  private arena!: Arena;
   /** Shadows and spectators are switched off when the device cannot keep up. */
   private detailOn = true;
-  private crew!: Crew;
+  private crew?: Crew;
   private brushPose: BrushPose[] = [];
   /** The camera currently looks straight down at the house. */
   private topView = true;
@@ -88,6 +93,12 @@ export class View3D implements GameView {
   private slowFor = 0;
 
   private broom = new THREE.Group();
+  private beam!: THREE.Mesh;
+  private aimRing!: THREE.Mesh;
+  /** Glowing trail behind the running stone. */
+  private trail!: THREE.Line;
+  private trailPts: number[] = [];
+  private trailKey = -1;
   private preview!: THREE.Line;
   private predicted!: THREE.Line;
   private aimLine!: THREE.Line;
@@ -130,10 +141,11 @@ export class View3D implements GameView {
     sc.far = 30;
     this.sun.shadow.bias = -0.0015;
     this.scene.add(this.sun, this.sun.target);
-    this.arena = buildArena(this.scene);
+    buildArena(this.scene);
     this.granite.map = graniteMap();
     this.granite.color.setHex(0xffffff);
-    this.crew = new Crew(this.scene);
+    // procedural figures are switched off until real, animated models are available
+    if (SHOW_FIGURES) this.crew = new Crew(this.scene);
     this.buildSheet();
     this.buildStoneGeometry();
     this.buildMarkers();
@@ -277,10 +289,17 @@ export class View3D implements GameView {
   }
 
   private buildMarkers(): void {
-    // target mark of the skip's broom (the broom itself is held by the skip figure)
-    const ring = flat(new THREE.RingGeometry(0.1, 0.14, 32), 0x0a7d3b, 0.006);
-    const dot = flat(new THREE.CircleGeometry(0.035, 16), 0x0a7d3b, 0.006);
-    this.broom.add(ring, dot);
+    // target: glowing ring on the ice and a light beam you can see from the hack
+    const ring = flat(new THREE.RingGeometry(0.16, 0.22, 48), 0x34e07a, 0.006);
+    const dot = flat(new THREE.CircleGeometry(0.05, 20), 0x34e07a, 0.006);
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.035, 0.07, 2.2, 16, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0x34e07a, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    beam.position.y = 1.1;
+    this.beam = beam;
+    this.aimRing = ring;
+    this.broom.add(ring, dot, beam);
     this.scene.add(this.broom);
 
     const dashed = new THREE.LineDashedMaterial({ color: 0x14783c, dashSize: 0.18, gapSize: 0.14, depthTest: false });
@@ -331,71 +350,70 @@ export class View3D implements GameView {
     return this.h - this.top - this.bottom;
   }
 
-  /** Camera height from which a rectangle of the given size fits into the view. */
-  private fitHeight(width: number, length: number): number {
-    const t = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
-    const aspect = this.w / this.playHeight();
-    return Math.max(length / 2 / t, width / 2 / (t * aspect)) * 1.04;
-  }
-
+  /**
+   * Camera rig: the camera always looks down the sheet in the direction of play; only the point it
+   * looks at, its distance and its pitch change – and all three glide smoothly. So it never swings
+   * sideways or turns away, whatever the phase.
+   */
   private updateCamera(game: Game, dt: number): void {
     const d = game.dir;
     const tee = teeY(d);
-    const pos = new THREE.Vector3();
-    const tgt = new THREE.Vector3();
-    const house = (): void => {
-      // top view of the playing end: hog line to back line
-      const cy = tee - d * 2.2;
-      const hgt = this.fitHeight(SHEET.width + 0.5, 9.0);
-      tgt.copy(V(0, cy, 0));
-      pos.copy(V(0, cy - d * hgt * 0.12, hgt));
-    };
     const s = game.viewStone;
+    const ph = game.phase;
+    const aspect = this.w / this.playHeight();
+    // distance at which the sheet (plus a margin) fills the width of the picture
+    const halfH = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+    const widthDist = (width: number): number => width / 2 / (halfH * aspect);
+
+    // goal: [target x, target y (sheet), distance, pitch (rad)]
+    let gx = 0;
+    let gy = tee - d * 1.2;
+    let dist = Math.max(widthDist(SHEET.width + 0.9), 7);
+    let pitch = THREE.MathUtils.degToRad(58);
     let mode: 'house' | 'delivery' | 'follow' | 'sheet' = 'house';
     if (this.cameraMode === 'sheet') mode = 'sheet';
     else if (this.cameraMode === 'auto') {
-      const ph = game.phase;
       if (ph === 'meterWeight' || ph === 'meterLine' || ph === 'gesture' || ph === 'charge' || ph === 'glide' || ph === 'slide') mode = 'delivery';
-      else if ((ph === 'running' || ph === 'replay') && s && s.inPlay && s.y * d < farHogY(d) * d - 1.5) mode = 'follow';
+      else if ((ph === 'running' || ph === 'replay') && s && s.inPlay && s.moving) mode = 'follow';
     }
     this.topView = mode === 'house';
-    switch (mode) {
-      case 'delivery': {
-        const sy = s ? s.y : hackY(d);
-        const sx = s ? s.x : 0;
-        // tall (portrait) screens look down more steeply so the ice fills the view
-        const tall = this.w / this.playHeight() < 1;
-        // a little to the side and above, so the thrower does not hide the stone
-        pos.copy(V(sx * 0.5 + d * (tall ? 0.7 : 1.0), sy - d * (tall ? 4.8 : 3.4), tall ? 3.8 : 2.1));
-        tgt.copy(V(sx, sy + d * (tall ? 3.6 : 8), 0));
-        break;
-      }
-      case 'follow':
-      {
-        const tall = this.w / this.playHeight() < 1;
-        pos.copy(V(s!.x * 0.7, s!.y - d * (tall ? 4.2 : 3.6), tall ? 3.8 : 2.0));
-        tgt.copy(V(s!.x, s!.y + d * (tall ? 4.5 : 5), 0));
-      }
-        break;
-      case 'sheet': {
-        const hgt = this.fitHeight(SHEET.width + 1, SHEET.length * 0.62);
-        pos.copy(V(0, -d * (HALF_LENGTH + 6), hgt * 0.75));
-        tgt.copy(V(0, d * 2, 0));
-        break;
-      }
-      default:
-        house();
+    if (mode === 'delivery' && s) {
+      // behind the stone in the hack, looking down the whole sheet towards the broom
+      gx = s.x * 0.6;
+      gy = s.y + d * 2.6;
+      dist = 6;
+      pitch = THREE.MathUtils.degToRad(22);
+    } else if (mode === 'follow' && s) {
+      // chase the stone; as it reaches the house the camera rises smoothly into the house view
+      const toTee = (tee - s.y) * d; // metres left to the tee line
+      const k = THREE.MathUtils.smoothstep(toTee, 3, 12); // 1 far away … 0 at the house
+      gx = s.x * 0.6 * k;
+      gy = THREE.MathUtils.lerp(tee - d * 1.2, s.y + d * 2.6, k);
+      // close behind the stone while it travels – it should fill the picture
+      dist = THREE.MathUtils.lerp(Math.max(widthDist(SHEET.width + 0.9), 7), 5.2, k);
+      pitch = THREE.MathUtils.lerp(THREE.MathUtils.degToRad(58), THREE.MathUtils.degToRad(21), k);
+    } else if (mode === 'sheet') {
+      gx = 0;
+      gy = d * 3;
+      dist = 34;
+      pitch = THREE.MathUtils.degToRad(38);
     }
+
+    const goal = this.camGoal;
+    goal.set(gx, gy, dist, pitch);
     if (!this.camInit) {
-      this.camPos.copy(pos);
-      this.camTarget.copy(tgt);
+      this.camState.copy(goal);
       this.camInit = true;
     } else {
-      const k = 1 - Math.pow(0.012, dt);
-      this.camPos.lerp(pos, k);
-      this.camTarget.lerp(tgt, k);
+      // exponential smoothing per parameter (frame-rate independent)
+      this.camState.lerp(goal, 1 - Math.pow(0.03, dt));
     }
-    this.camera.aspect = this.w / this.playHeight();
+    const [cx, cy, cd, cp] = this.camState.toArray();
+    this.camTarget.copy(V(cx, cy, 0));
+    // behind the target (against the direction of play) and above it
+    this.camPos.copy(V(cx, cy - d * cd * Math.cos(cp), cd * Math.sin(cp)));
+
+    this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
     this.sun.target.position.set(this.camTarget.x, 0, this.camTarget.z);
     this.sun.position.set(this.camTarget.x + 2.5, 14, this.camTarget.z + 3);
@@ -405,8 +423,7 @@ export class View3D implements GameView {
       this.camera.position.y += (Math.random() - 0.5) * this.shake;
       this.shake *= Math.pow(0.002, dt);
     }
-    // looking almost straight down: keep "up" along the sheet so the play direction points up
-    this.camera.up.set(0, 0.2, -d).normalize();
+    this.camera.up.set(0, 1, 0);
     this.camera.lookAt(this.camTarget);
   }
 
@@ -472,10 +489,9 @@ export class View3D implements GameView {
       this.frameAvg = 17;
       this.resize(this.w, this.h);
     } else if (this.slowFor > 2 && this.detailOn && !this.pinQuality) {
-      // still too slow at the lowest resolution: no shadows, no spectators
+      // still too slow at the lowest resolution: no shadows (the arena always stays)
       this.detailOn = false;
       this.sun.castShadow = false;
-      for (const o of this.arena.detail) o.visible = false;
       this.slowFor = 0;
       this.frameAvg = 17;
     }
@@ -508,8 +524,13 @@ export class View3D implements GameView {
 
     // broom and preview
     const aiming = game.phase !== 'endScore' && game.phase !== 'gameOver' && game.phase !== 'replay';
-    this.broom.visible = aiming;
+    this.broom.visible = aiming && game.phase !== 'running';
     this.broom.position.set(game.aimX, 0, -game.aimY);
+    const pulse = 1 + 0.12 * Math.sin(performance.now() / 260);
+    this.aimRing.scale.set(pulse, pulse, 1);
+    // the beam is for the low camera behind the hack; from above the ring is enough
+    this.beam.visible = !this.topView;
+    this.updateTrail(game);
     const p = game.preview();
     this.preview.visible = p.length >= 4;
     if (this.preview.visible && p !== this.lastPreview) {
@@ -530,7 +551,7 @@ export class View3D implements GameView {
 
     this.updateSparks(dt);
     this.drawSweepers(game);
-    this.crew.update(game, dt, this.brushPose, this.topView, this.camPos);
+    this.crew?.update(game, dt, this.brushPose, this.topView, this.camPos);
     this.drawResult(game);
     this.drawDebug(game, dt);
 
@@ -541,6 +562,33 @@ export class View3D implements GameView {
     r.setScissor(0, this.bottom, this.w, this.playHeight());
     r.setScissorTest(true);
     r.render(this.scene, this.camera);
+  }
+
+  /** Glowing line behind the running stone (team colour), kept until the next delivery. */
+  private updateTrail(game: Game): void {
+    const s = game.viewStone;
+    if (!this.trail) {
+      this.trail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthTest: false }));
+      this.trail.renderOrder = 78;
+      this.scene.add(this.trail);
+    }
+    const running = (game.phase === 'running' || game.phase === 'replay') && s && s.inPlay;
+    if (s && s.id !== this.trailKey && running) {
+      this.trailKey = s.id;
+      this.trailPts = [];
+      (this.trail.material as THREE.LineBasicMaterial).color.setHex(s.team === 0 ? 0xff5a66 : 0xffd84d);
+    }
+    if (running && s) {
+      const n = this.trailPts.length;
+      const lx = this.trailPts[n - 2];
+      const ly = this.trailPts[n - 1];
+      if (n === 0 || (s.x - lx) ** 2 + (s.y - ly) ** 2 > 0.04) {
+        this.trailPts.push(s.x, s.y);
+        this.setLine(this.trail, this.trailPts, 0.01);
+      }
+    }
+    this.trail.visible = this.trailPts.length >= 4 && (game.phase === 'running' || game.phase === 'replay' || game.phase === 'settled');
+    if (game.phase === 'aim' || game.phase === 'charge') this.trailPts = [];
   }
 
   private setLine(line: THREE.Line, pts: readonly number[], h: number): void {
@@ -563,7 +611,7 @@ export class View3D implements GameView {
     const now = performance.now();
     this.brushes.forEach((g, k) => {
       const sw = game.viewWorld.sweepers.state[k];
-      g.visible = show && (k < 2 || sw.down);
+      g.visible = show && sw.down; // only the brush heads, and only while they are on the ice
       const bp = (this.brushPose[k] ??= { x: 0, y: 0, fx: 0, fy: 1, visible: false, down: false, effective: 0 });
       bp.visible = g.visible;
       if (!g.visible || !s) return;
@@ -595,7 +643,9 @@ export class View3D implements GameView {
 
   /** End result: rings around the counting stones, measuring lines and distance labels. */
   private drawResult(game: Game): void {
-    const r = game.phase === 'endScore' ? game.endResult : null;
+    const between = game.phase === 'aim' || game.phase === 'aiThink' || game.phase === 'settled';
+    const r = game.phase === 'endScore' ? game.endResult : between && !game.lsd && !game.drill ? scoreEnd(game.viewWorld.stones, game.dir) : null;
+    const showMeasure = game.phase === 'endScore';
     const find = (id: number): Stone | undefined => game.viewWorld.stones.find((q) => q.id === id);
     let n = 0;
     const seg: number[] = [];
@@ -612,8 +662,9 @@ export class View3D implements GameView {
         const ring = this.rings[n++];
         ring.visible = true;
         ring.position.set(s.x, ring.position.y, -s.y);
+        (ring.material as THREE.MeshBasicMaterial).color.setHex(s.team === 0 ? 0xff5a66 : 0xffd84d);
       }
-      for (const m of r.measured) {
+      for (const m of showMeasure ? r.measured : []) {
         const s = find(m.id);
         if (!s) continue;
         seg.push(0, 0.16, -teeY(game.dir), s.x, 0.16, -s.y);

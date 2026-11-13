@@ -32,7 +32,7 @@ const TIPS: Tip[] = [
   {
     id: 'aim',
     title: 'Zielen',
-    text: 'Tippe aufs Eis, um den Besen des Skips zu setzen – dorthin zielt der Stein. Wähle die Drehung (In-Turn oder Out-Turn bestimmt, in welche Richtung der Stein am Ende curlt) und sage ein Gewicht an. Die gestrichelte Linie zeigt den Weg ohne Wischen.',
+    text: 'Ziehe seitlich über das Eis, um den Zielpunkt (grüner Ring) zu verschieben, oder tippe, um ihn zu setzen – dorthin zielt der Stein. Wähle die Drehung (In-Turn oder Out-Turn bestimmt, in welche Richtung der Stein am Ende curlt) und sage ein Gewicht an. Die gestrichelte Linie zeigt den Weg ohne Wischen.',
     when: (g) => g.phase === 'aim' && !g.isAI(g.team),
   },
   {
@@ -44,7 +44,7 @@ const TIPS: Tip[] = [
   {
     id: 'sweep',
     title: 'Wischen',
-    text: 'Reibe vor dem Stein hin und her. Wischen trägt den Stein weiter und hält ihn gerader. Der Skip ruft dir zu: HARD! = hart wischen, Clean = locker, Off! = aufhören.',
+    text: 'Halte einen Finger auf den Bildschirm, um zu wischen. Wischen trägt den Stein weiter und hält ihn gerader. Der Skip ruft dir zu: HARD! = wischen, Off! = loslassen.',
     when: (g) => g.phase === 'running' && !g.isAI(g.team) && g.options.sweepMode === 'manual' && g.speed > 0.5,
   },
   {
@@ -56,9 +56,9 @@ const TIPS: Tip[] = [
 ];
 
 const EN_TIPS: Record<string, { title: string; text: string }> = {
-  aim: { title: 'Aiming', text: 'Tap the ice to place the skip’s broom – that is where the stone is aimed. Choose the turn (in-turn or out-turn decides which way the stone curls at the end) and call a weight. The dashed line shows the path without sweeping.' },
+  aim: { title: 'Aiming', text: 'Drag sideways across the ice to move the target (green ring), or tap to place it – that is where the stone is aimed. Choose the turn (in-turn or out-turn decides which way the stone curls at the end) and call a weight. The dashed line shows the path without sweeping.' },
   push: { title: 'Delivery', text: 'Put a finger on the ice and hold: the scale fills up and shows the weight. At the weight you want, swipe up – the stone pushes off. Then drag sideways to keep it on the line and let go before the red line.' },
-  sweep: { title: 'Sweeping', text: 'Rub back and forth in front of the stone. Sweeping carries the stone further and keeps it straighter. The skip calls: HARD! = sweep hard, Clean = lightly, Off! = stop.' },
+  sweep: { title: 'Sweeping', text: 'Hold a finger on the screen to sweep. Sweeping carries the stone further and keeps it straighter. The skip calls: HARD! = sweep, Off! = let go.' },
   score: { title: 'Scoring', text: 'Only stones in the house count. The team with the stone closest to the centre gets one point for each stone closer than the opponent’s best. The scoring team gives up the last stone (hammer) in the next end.' },
 };
 
@@ -306,6 +306,11 @@ export class Shell {
         title = en ? `${t(TEAM_NAMES[w])} wins` : `${TEAM_NAMES[w]} gewinnt`;
       }
       body = `<div class="big-num">${m.total(0)} : ${m.total(1)}</div>`;
+      if (game.ratings.length) {
+        const avg = game.ratings.reduce((a, b) => a + b, 0) / game.ratings.length;
+        const great = game.ratings.filter((x) => x === 3).length;
+        body += `<div>${en ? 'Your shots' : 'Deine Würfe'}: ⌀ ${avg.toFixed(1)} ★ · ${great}× ${en ? 'great' : 'super'}</div>`;
+      }
       if (m.conceded >= 0) body += `<div>${en ? `${t(TEAM_NAMES[m.conceded])} conceded` : `${TEAM_NAMES[m.conceded]} hat aufgegeben`}</div>`;
       body += `<table>${$('scoreboard').innerHTML}</table>`;
       if (vsAi) {
