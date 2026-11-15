@@ -6,6 +6,13 @@ import { scoreEnd } from '../rules/rules';
 import { getLang, t } from '../ui/i18n';
 import type { CameraMode, GameView } from '../render/view';
 
+/** Name of the weight closest to a release speed (for the skip's call). */
+function nearestWeight(g: Game, speed: number): string {
+  let best = g.weights[0];
+  for (const w of g.weights) if (Math.abs(w.speed - speed) < Math.abs(best.speed - speed)) best = w;
+  return best.label;
+}
+
 const CAMERA_LABEL: Record<CameraMode, string> = { auto: 'Kamera: Auto', top: 'Kamera: Draufsicht', sheet: 'Kamera: Übersicht' };
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -20,7 +27,6 @@ const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) 
  * Touch: the same via the on-screen buttons; the two big sweep pads work with two thumbs.
  */
 export class Controls {
-  private aimPointer = -1;
   private boardKey = '';
   private decisionKey = '';
 
@@ -29,10 +35,10 @@ export class Controls {
   private hold_: { id: number; x: number; y: number; steerX: number } | null = null;
   private steerKeys = { left: false, right: false, value: 0, last: 0 };
   private scaleKey = '';
-  private aimDrag: { x: number; aimX: number; moved: boolean; step: number } | null = null;
-  /** Sweeping: fingers currently on the screen, and the time to the next felt brush stroke. */
-  private sweepPointers = new Set<number>();
+  /** Time to the next felt brush stroke while a sweep button is held. */
   private strokeT = 0;
+  private lastDelivery = 0;
+  private callKey = '';
   private lastTick = -1;
   private lastCall = '';
   private lastPhase = '';
@@ -40,28 +46,6 @@ export class Controls {
   private shotKey = '';
 
   constructor(public game: Game, private view: GameView, canvas: HTMLCanvasElement, private sound: Sound) {
-    // aiming: drag sideways anywhere on the ice – the broom follows the movement (so the finger never
-    // covers it); a short tap puts the broom where you tapped
-    const aim = (e: PointerEvent): void => {
-      const a = this.aimDrag;
-      if (!a) return;
-      const dx = e.clientX - a.x;
-      if (Math.abs(dx) > 6) a.moved = true;
-      if (!a.moved) return;
-      // one screen width moves the broom across ~2/3 of the sheet; screen right = thrower's right
-      const sheetX = a.aimX + (dx / window.innerWidth) * 3.2 * this.game.dir;
-      this.game.setAim(sheetX, this.game.aimY);
-      const step = Math.round(sheetX / 0.15);
-      if (step !== a.step) {
-        a.step = step;
-        haptics.tick();
-      }
-    };
-    const aimTap = (e: PointerEvent): void => {
-      const r = canvas.getBoundingClientRect();
-      const p = view.toSheet(e.clientX - r.left, e.clientY - r.top);
-      if (p) this.game.setAim(p.x, this.game.aimY);
-    };
     // swipe gesture: drag the stone up the screen and let go before the hog line
     const swipeMove = (e: PointerEvent): void => {
       const sw = this.swipe;
@@ -82,21 +66,6 @@ export class Controls {
       }
       if (this.game.phase === 'glide') this.game.steer((e.clientX - h.steerX) / (window.innerWidth * 0.3));
     };
-    // sweeping: finger on the screen = sweep, finger off = stop
-    canvas.addEventListener('pointerdown', (e) => {
-      if (this.game.phase !== 'running') return;
-      this.sweepPointers.add(e.pointerId);
-      try {
-        canvas.setPointerCapture(e.pointerId);
-      } catch {
-        /* pointer already gone */
-      }
-    });
-    const sweepEnd = (e: PointerEvent): void => {
-      this.sweepPointers.delete(e.pointerId);
-    };
-    canvas.addEventListener('pointerup', sweepEnd);
-    canvas.addEventListener('pointercancel', sweepEnd);
 
     canvas.addEventListener('pointerdown', (e) => {
       if (this.game.phase === 'charge') {
@@ -118,26 +87,12 @@ export class Controls {
         }
         return;
       }
-      if (this.game.phase !== 'aim') return;
-      this.aimPointer = e.pointerId;
-      this.aimDrag = { x: e.clientX, aimX: this.game.aimX, moved: false, step: Math.round(this.game.aimX / 0.15) };
-      try {
-        canvas.setPointerCapture(e.pointerId);
-      } catch {
-        /* pointer already gone */
-      }
     });
     canvas.addEventListener('pointermove', (e) => {
-      if (e.pointerId === this.aimPointer) aim(e);
       swipeMove(e);
       pushMove(e);
     });
     const end = (e: PointerEvent): void => {
-      if (e.pointerId === this.aimPointer) {
-        this.aimPointer = -1;
-        if (this.aimDrag && !this.aimDrag.moved) aimTap(e);
-        this.aimDrag = null;
-      }
       if (this.hold_ && e.pointerId === this.hold_.id) {
         this.hold_ = null;
         // lifting without a swipe pushes off as well; the stone then glides unsteered
@@ -154,10 +109,8 @@ export class Controls {
     canvas.addEventListener('pointercancel', end);
 
     // buttons
-    this.press('btn-turn-cw', () => this.game.setTurn('cw'));
-    this.press('btn-turn-ccw', () => this.game.setTurn('ccw'));
-    this.press('btn-weight-down', () => this.game.changeWeight(-1));
-    this.press('btn-weight-up', () => this.game.changeWeight(1));
+    this.hold('pad-sweep-0', 0);
+    this.hold('pad-sweep-1', 1);
     this.press('btn-go', () => this.game.tap());
     this.press('btn-continue', () => this.game.tap());
     this.press('btn-cancel', () => this.game.cancel());
@@ -293,26 +246,6 @@ export class Controls {
     });
   }
 
-  /** Holding a finger on the screen sweeps hard; every brush stroke is felt as a short vibration. */
-  private updateScrub(dt: number): void {
-    const g = this.game;
-    if (g.isAI(g.team) || g.options.sweepMode !== 'manual') {
-      g.setScrub(0);
-      return;
-    }
-    const on = this.sweepPointers.size > 0 && g.current?.moving === true;
-    g.setScrub(on ? 1 : 0);
-    if (on) {
-      this.strokeT -= dt;
-      if (this.strokeT <= 0) {
-        this.strokeT = 0.16;
-        haptics.tick();
-      }
-    } else {
-      this.strokeT = 0;
-    }
-  }
-
   private cycleCamera(): void {
     const order: CameraMode[] = ['auto', 'top', 'sheet'];
     this.view.cameraMode = order[(order.indexOf(this.view.cameraMode) + 1) % order.length];
@@ -396,9 +329,43 @@ export class Controls {
     $('hud-end').textContent = t(info);
     team.style.visibility = phase === 'gameOver' || phase === 'endScore' ? 'hidden' : 'visible';
 
-    $('weight-label').textContent = t(g.weight.label);
-    $('btn-turn-cw').classList.toggle('on', g.turn === 'cw');
-    $('btn-turn-ccw').classList.toggle('on', g.turn === 'ccw');
+    // the skip's call for the next shot
+    const sc = g.skipCall;
+    const ck = sc ? sc.label + sc.turn + sc.speed : phase;
+    if (ck !== this.callKey) {
+      this.callKey = ck;
+      $('call-text').textContent = sc ? t(sc.label) : '';
+      $('call-sub').textContent = sc ? `${sc.turn === 'cw' ? 'In-Turn ↻' : 'Out-Turn ↺'} · ${t('Gewicht')}: ${t(nearestWeight(g, sc.speed))}` : '';
+    }
+
+    // feedback right after the release: how well were weight and line?
+    const dv = g.lastDelivery;
+    if (dv && dv.n !== this.lastDelivery) {
+      this.lastDelivery = dv.n;
+      const names = ['DANEBEN', 'GUT', 'STARK', 'PERFEKT'];
+      const pop = $('delivery-pop');
+      const pct = (dv.weightErr * 100).toFixed(1).replace('.', ',');
+      const wHint = dv.weightGrade === 3 ? '' : dv.weightErr > 0 ? `${t('zu schwer')} (+${pct} %)` : `${t('zu leicht')} (${pct} %)`;
+      const cm = Math.round(Math.abs(dv.lineErr) * 100);
+      const lHint = dv.lineGrade === 3 ? '' : `${cm} cm ${t(dv.lineErr > 0 ? 'zu weit rechts' : 'zu weit links')}`;
+      pop.innerHTML =
+        `<div class="row g${dv.weightGrade}"><span>${t('Gewicht')}</span><b>${t(names[dv.weightGrade])}</b><small>${wHint}</small></div>` +
+        `<div class="row g${dv.lineGrade}"><span>${t('Linie')}</span><b>${t(names[dv.lineGrade])}</b><small>${lHint}</small></div>` +
+        (dv.streak >= 2 ? `<div class="streak">🔥 ${dv.streak}× ${t('in Serie')}</div>` : '');
+      pop.classList.remove('show');
+      void pop.offsetWidth;
+      pop.classList.add('show');
+      const best = Math.min(dv.weightGrade, dv.lineGrade);
+      if (best === 3) {
+        this.sound.chime(3);
+        haptics.success();
+      } else if (best === 2) {
+        this.sound.chime(1);
+        haptics.pulse(30);
+      } else if (best === 0) {
+        haptics.pulse([40, 60, 40]);
+      }
+    }
     $('btn-concede').style.display = g.lsd ? 'none' : '';
 
     // message / ruling
@@ -543,6 +510,9 @@ export class Controls {
     if (phase === 'aiThink') {
       $('think-bar').style.width = `${Math.round(g.thinking * 100)}%`;
       $('think-text').textContent = t(`${TEAM_NAMES[g.team]} (KI) überlegt …`);
+    } else if (phase === 'skipThink') {
+      $('think-bar').style.width = '100%';
+      $('think-text').textContent = t('Dein Skip überlegt …');
     }
     $('watch-text').textContent = t(ai ? `${TEAM_NAMES[g.team]} (KI) wischt selbst` : 'Deine Mitspieler wischen nach Ansage des Skips');
 
@@ -564,21 +534,32 @@ export class Controls {
         void call.offsetWidth; // restart the animation
         call.classList.add('pop');
       }
-      this.updateScrub(dt);
-      const level = Math.max(g.sweepIntensity(0), g.sweepIntensity(1));
-      $('scrub-fill').style.width = `${Math.round(level * 100)}%`;
-      $('scrub-bar').classList.toggle('hard', level >= 0.85);
+      // two sweep buttons: each one is a sweeper; the skip's call lights them up
       const st = g.world.sweepers.state;
-      const fresh = 1 - Math.max(st[0].fatigue, st[1].fatigue) / SWEEP.fatigueMax;
-      $('fatigue-fill').style.width = `${Math.round(fresh * 100)}%`;
-      $('scrub-hint').textContent = t(level > 0 ? 'Wischen!' : 'Finger halten = wischen');
-      $('panel-sweep').classList.toggle('sweeping', level > 0);
+      const wanted = g.advice !== 'off' && g.current?.moving === true;
+      let pressed = false;
+      for (let k = 0; k < 2; k++) {
+        const pad = $(`pad-sweep-${k}`);
+        const on = g.sweepIntensity(k) > 0;
+        pressed = pressed || on;
+        pad.classList.toggle('on', on && g.sweeperActive(k));
+        pad.classList.toggle('blocked', on && !g.sweeperActive(k));
+        pad.classList.toggle('wanted', wanted && !on);
+        $(`fatigue-${k}`).style.width = `${Math.round((1 - st[k].fatigue / SWEEP.fatigueMax) * 100)}%`;
+      }
+      // every brush stroke is felt
+      if (pressed && g.current?.moving) {
+        this.strokeT -= dt;
+        if (this.strokeT <= 0) {
+          this.strokeT = 0.16;
+          haptics.tick();
+        }
+      } else this.strokeT = 0;
       const skip = $('pad-skip');
       skip.style.display = g.skipMaySweep ? '' : 'none';
       skip.textContent = t(`Skip ${TEAM_NAMES[1 - g.team]} wischt (L)`);
       skip.classList.toggle('on', g.sweeperActive(2));
     } else {
-      this.sweepPointers.clear();
       if (phase !== 'replay') $('hud-speed').textContent = t('');
       $('hud-call').textContent = t('');
       $('pad-skip').style.display = 'none';

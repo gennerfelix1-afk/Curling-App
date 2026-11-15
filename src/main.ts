@@ -18,6 +18,7 @@ function optionsFromMenu(mode: string): Partial<GameOptions> {
   const drill = mode === 'draw' || mode === 'takeout' || mode === 'ice' ? (mode as DrillKind) : null;
   return {
     players: mode === 'ai' ? ['human', 'ai'] : ['human', 'human'],
+    skipCalls: true,
     aiLevel: Number(value('opt-ai')),
     sweepMode: value('opt-sweep') as 'manual' | 'calls' | 'auto',
     drill,

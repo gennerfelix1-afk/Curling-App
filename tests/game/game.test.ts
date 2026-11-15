@@ -66,7 +66,7 @@ describe('game flow (single throws)', () => {
     expect(g.world.stones.length).toBe(1);
   });
 
-  it('sweeping carries the stone further and straighter; taps raise the intensity', () => {
+  it('sweeping carries the stone further and straighter; each button is one sweeper', () => {
     const play = (sweep: boolean): { x: number; y: number } => {
       const g = new Game({ seed: 3, ice: clean, hammer: 1 });
       g.changeWeight(-2); // top 8
@@ -90,12 +90,12 @@ describe('game flow (single throws)', () => {
     expect(on.x).toBeLessThan(off.x * 0.9);
 
     const g = new Game({ seed: 3, ice: clean, hammer: 1 });
-    g.sweepDown(0);
-    expect(g.sweepIntensity(0)).toBeCloseTo(0.8, 5);
-    g.sweepUp(0);
-    expect(g.sweepIntensity(0)).toBe(0);
+    // a pressed sweep button = that sweeper sweeps hard
     g.sweepDown(0);
     expect(g.sweepIntensity(0)).toBe(1);
+    expect(g.sweepIntensity(1)).toBe(0);
+    g.sweepUp(0);
+    expect(g.sweepIntensity(0)).toBe(0);
   });
 
   it('meter errors change weight and line', () => {

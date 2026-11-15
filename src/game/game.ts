@@ -1,4 +1,4 @@
-import { DERIVED, EXECUTION, RULES, SHEET, STONE, type Difficulty } from '../physics/config';
+import { DERIVED, EXECUTION, GRADES, RULES, SHEET, STONE, type Difficulty } from '../physics/config';
 import { deliverStone, releaseY, type DeliveryParams, type Turn } from '../physics/delivery';
 import { Ice, type IceOptions } from '../physics/ice';
 import { Rng } from '../physics/rng';
@@ -21,7 +21,7 @@ import {
 import { evaluate } from '../ai/evaluate';
 import { IceBook } from '../ai/iceBook';
 import { AI_LEVELS, LIGHT_BIAS, Planner } from '../ai/planner';
-import type { Shot, ShotTarget } from '../ai/shots';
+import { generateShots, type Shot, type ShotTarget } from '../ai/shots';
 import { CALL_INTENSITY, CALL_TEXT, SweepAdvisor, type SweepCall } from '../ai/sweepAdvisor';
 import { Match, POSITIONS } from './match';
 import { weightsFromBook, type Weight } from './weights';
@@ -29,6 +29,7 @@ import { weightsFromBook, type Weight } from './weights';
 export type Phase =
   | 'aim'
   | 'aiThink'
+  | 'skipThink'
   | 'meterWeight'
   | 'meterLine'
   | 'gesture'
@@ -70,6 +71,28 @@ export interface ReplayState {
 }
 
 export const TEAM_NAMES = ['Rot', 'Gelb'] as const;
+
+/** How well the player executed the called shot (shown right after the release). */
+export interface DeliveryFeedback {
+  /** Relative deviation from the called weight (+ = too heavy). */
+  weightErr: number;
+  /** Metres off the broom (+ = right of it, seen from the thrower). */
+  lineErr: number;
+  /** 3 = perfect, 2 = great, 1 = good, 0 = off. */
+  weightGrade: number;
+  lineGrade: number;
+  /** Deliveries in a row with both grades at least "great". */
+  streak: number;
+  n: number;
+}
+
+/** Search effort of the skip who calls the shots for human players. */
+const SKIP_LEVEL = { name: 'Skip', keep: 5, sims: 2, weightSigma: 0.015, lineSigma: 0.12, pickFrom: 1 };
+
+function grade(err: number, limits: readonly number[]): number {
+  const a = Math.abs(err);
+  return a <= limits[0] ? 3 : a <= limits[1] ? 2 : a <= limits[2] ? 1 : 0;
+}
 
 /** Rating of one delivery: how much it improved the position for the team that played it. */
 export interface ThrowRating {
@@ -134,6 +157,11 @@ export interface GameOptions {
   sweepMode: 'manual' | 'calls' | 'auto';
   /** Training drill instead of a match. */
   drill: DrillKind | null;
+  /**
+   * The skip calls every shot for human players (target, turn, weight); the player only executes
+   * the delivery. Without it the player places the broom and chooses turn and weight.
+   */
+  skipCalls: boolean;
 }
 
 export type DrillKind = 'draw' | 'takeout' | 'ice';
@@ -160,6 +188,7 @@ export const DEFAULT_GAME_OPTIONS: GameOptions = {
   aiLevel: 1,
   sweepMode: 'manual',
   drill: null,
+  skipCalls: false,
 };
 
 /** Live sweeping input of one sweeper. */
@@ -170,7 +199,7 @@ interface SweepInput {
 }
 
 const DT = DERIVED.dt;
-const HOLD_INTENSITY = 0.6;
+const HOLD_INTENSITY = 1; // a pressed sweep button = that sweeper sweeps hard
 const TAP_BOOST = 0.2;
 const BOOST_DECAY = 0.8; // per second
 const SETTLE_PAUSE = 1.2; // seconds before the next stone
@@ -260,6 +289,12 @@ export class Game {
   private aiExec: { speed: number; aimOffset: number } | null = null;
   private advisor: SweepAdvisor | null = null;
   private decisionT = 0;
+
+  /** Shot the skip has called for the human player (option skipCalls). */
+  skipCall: Shot | null = null;
+  /** Feedback on the execution of the last human delivery. */
+  lastDelivery: DeliveryFeedback | null = null;
+  private streak = 0;
 
   /** How good the last delivery was for the team that played it (shown to the players). */
   lastRating: ThrowRating | null = null;
@@ -369,7 +404,7 @@ export class Game {
 
   /** Move the skip's broom (clamped to the playing end). */
   setAim(x: number, y: number): void {
-    if (this.phase !== 'aim') return;
+    if (this.phase !== 'aim' || this.options.skipCalls) return;
     const lim = HALF_WIDTH - STONE.radius;
     this.aimX = Math.max(-lim, Math.min(lim, x));
     const t = teeY(this.dir) * this.dir;
@@ -379,13 +414,13 @@ export class Game {
   }
 
   setTurn(turn: Turn): void {
-    if (this.phase !== 'aim' || this.lsd) return; // LSD: one clockwise, one counter-clockwise
+    if (this.phase !== 'aim' || this.lsd || this.options.skipCalls) return; // LSD: one clockwise, one counter-clockwise
     this.turn = turn;
     this.previewDirty = true;
   }
 
   changeWeight(delta: number): void {
-    if (this.phase !== 'aim') return;
+    if (this.phase !== 'aim' || this.options.skipCalls) return;
     this.weightIndex = Math.max(0, Math.min(this.weights.length - 1, this.weightIndex + delta));
     this.previewDirty = true;
   }
@@ -396,6 +431,7 @@ export class Game {
    */
   tap(): boolean {
     if (this.phase === 'aim' && this.isAI(this.team)) return false;
+    if (this.phase === 'aim' && this.options.skipCalls && !this.skipCall) return false;
     switch (this.phase) {
       case 'aim':
         if (this.options.delivery === 'gesture') {
@@ -467,7 +503,21 @@ export class Game {
 
   /** Where the called weight sits on the power scale. */
   get targetPower(): number {
-    return this.scalePos(this.weightIndex);
+    if (!this.skipCall) return this.scalePos(this.weightIndex);
+    // invert the scale for the called speed
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 30; i++) {
+      const mid = (lo + hi) / 2;
+      if (this.powerSpeed(mid) < this.skipCall.speed) lo = mid;
+      else hi = mid;
+    }
+    return (lo + hi) / 2;
+  }
+
+  /** Release speed of the shot to be played: the skip's call, or the weight chosen by the player. */
+  get callSpeed(): number {
+    return this.skipCall ? this.skipCall.speed : this.weight.speed;
   }
 
   /** Name of the weight the current power corresponds to. */
@@ -662,8 +712,17 @@ export class Game {
       ? this.aiExec.speed
       : this.push.active
         ? this.powerSpeed(this.push.power)
-        : this.weight.speed * (1 + this.weightDev * EXECUTION.weightError[diff]);
+        : this.callSpeed * (1 + this.weightDev * EXECUTION.weightError[diff]);
     this.push.active = false;
+    if (!this.aiExec) {
+      // feedback: how well did the player hit the called weight and the line?
+      const weightErr = speed / this.callSpeed - 1;
+      const lineErr = this.lineDev * EXECUTION.lineError[diff] * this.dir;
+      const weightGrade = grade(weightErr, GRADES.weight);
+      const lineGrade = grade(lineErr, GRADES.line);
+      this.streak = weightGrade >= 2 && lineGrade >= 2 ? this.streak + 1 : 0;
+      this.lastDelivery = { weightErr, lineErr, weightGrade, lineGrade, streak: this.streak, n: (this.lastDelivery?.n ?? 0) + 1 };
+    }
     const angle = s.angle;
     this.advisor = new SweepAdvisor(this.shotTarget());
     this.advice = 'off';
@@ -685,7 +744,7 @@ export class Game {
       team: this.team,
       angle,
       sweep: [],
-      label: `${TEAM_NAMES[this.team]} · ${this.aiShot ? this.aiShot.label : this.weight.label}`,
+      label: `${TEAM_NAMES[this.team]} · ${this.aiShot ? this.aiShot.label : this.skipCall ? this.skipCall.label : this.weight.label}`,
     };
     const released = deliverStone(this.world, this.stoneId(), this.team, params);
     released.angle = angle;
@@ -765,6 +824,12 @@ export class Game {
       return;
     }
     if (this.phase === 'aim' && this.isAI(this.team)) this.startThinking();
+    if (this.phase === 'aim' && !this.isAI(this.team) && this.options.skipCalls && !this.skipCall) this.startSkipCall();
+    if (this.phase === 'skipThink') {
+      this.thinkT += seconds;
+      if ((!this.planner || this.planner.step(9)) && this.thinkT >= 0.4) this.applySkipCall();
+      return;
+    }
     if (this.phase === 'aiThink') {
       this.thinkT += seconds;
       // time-sliced search: the result does not depend on the slicing
@@ -820,29 +885,43 @@ export class Game {
 
   private startThinking(): void {
     const team = this.team;
-    const m = this.match;
     this.thinkT = 0;
     this.aiShot = null;
     this.phase = 'aiThink';
-    if (this.lsd) {
-      // last stone draw: simply a draw to the button with the prescribed turn
-      const T = teeY(this.dir) * this.dir;
-      const speed = this.book.speedForDistance(this.book.toTee);
-      const aim = this.book.broomFor(speed, this.turn === 'cw', 0, T);
-      this.planned_ = {
-        kind: 'draw',
-        label: 'Draw auf den Button',
-        turn: this.turn,
-        speed,
-        aimX: aim * this.dir,
-        aimY: teeY(this.dir),
-        target: { stopX: 0, stopY: teeY(this.dir) },
-      };
-      this.planner = null;
-      return;
+    this.planned_ = this.fixedShot();
+    this.planner = this.planned_ ? null : this.newPlanner(team, AI_LEVELS[this.options.aiLevel]);
+  }
+
+  /** Draw to the button with the current turn (last stone draw, draw drills). */
+  private buttonDraw(): Shot {
+    const T = teeY(this.dir) * this.dir;
+    const speed = this.book.speedForDistance(this.book.toTee);
+    const aim = this.book.broomFor(speed, this.turn === 'cw', 0, T);
+    return {
+      kind: 'draw',
+      label: 'Draw auf den Button',
+      turn: this.turn,
+      speed,
+      aimX: aim * this.dir,
+      aimY: teeY(this.dir),
+      target: { stopX: 0, stopY: teeY(this.dir) },
+    };
+  }
+
+  /** Situations in which the shot is given and no search is needed. */
+  private fixedShot(): Shot | null {
+    if (this.lsd) return this.buttonDraw();
+    if (this.drill) {
+      if (this.drill.kind !== 'takeout') return this.buttonDraw();
+      const hits = generateShots(this.book, this.world.stones, 0, 10).filter((q) => q.kind === 'hit-and-stay');
+      return hits.find((q) => q.turn === this.turn) ?? hits[0] ?? this.buttonDraw();
     }
-    this.planned_ = null;
-    this.planner = new Planner({
+    return null;
+  }
+
+  private newPlanner(team: number, level: (typeof AI_LEVELS)[number]): Planner {
+    const m = this.match;
+    return new Planner({
       ice: this.ice,
       book: this.book,
       stones: this.world.stones,
@@ -851,9 +930,29 @@ export class Game {
       hammer: m.hammer,
       scoreDiff: m.total(team) - m.total(1 - team),
       endsLeft: Math.max(0, m.ends - m.end),
-      level: AI_LEVELS[this.options.aiLevel],
+      level,
       seed: this.rng.nextU32(),
     });
+  }
+
+  /** The skip thinks about the shot the human player should play. */
+  private startSkipCall(): void {
+    this.thinkT = 0;
+    this.phase = 'skipThink';
+    this.planned_ = this.fixedShot();
+    this.planner = this.planned_ ? null : this.newPlanner(this.team, SKIP_LEVEL);
+  }
+
+  private applySkipCall(): void {
+    const shot = this.planned_ ?? this.planner!.best!;
+    this.planner = null;
+    this.planned_ = null;
+    this.skipCall = shot;
+    this.aimX = shot.aimX;
+    this.aimY = shot.aimY;
+    this.turn = shot.turn;
+    this.previewDirty = true;
+    this.phase = 'aim';
   }
 
   /** Progress of the AI's deliberation, 0…1. */
@@ -883,6 +982,7 @@ export class Game {
   /** What the stone is supposed to do, for the skip's sweeping calls. */
   private shotTarget(): ShotTarget {
     if (this.aiShot && this.aiExec) return this.aiShot.target;
+    if (this.skipCall) return this.skipCall.target;
     const w = this.weight;
     if (w.kind === 'draw' && w.value < 2) {
       return { stopY: teeY(this.dir) + this.dir * w.value };
@@ -1251,6 +1351,7 @@ export class Game {
     this.eventCursor = 0;
     this.world.sweepers.recover(30);
     this.previewDirty = true;
+    this.skipCall = null;
     this.aiExec = null;
     this.aiShot = null;
     this.advisor = null;
@@ -1427,7 +1528,7 @@ export class Game {
       releaseX: rp.x,
       aimX: this.aimX,
       aimY: this.aimY,
-      speed: this.weight.speed,
+      speed: this.callSpeed,
       turn: this.turn,
     });
     const path = [0, hackY(this.dir), s.x, s.y];

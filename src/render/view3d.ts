@@ -6,13 +6,10 @@ import type { Stone } from '../physics/stone';
 import { World } from '../physics/world';
 import { scoreEnd } from '../rules/rules';
 import { buildArena, graniteMap, setupEnvironment } from './arena';
-import { Crew, type BrushPose } from './figures';
 import type { CameraMode, GameView } from './view';
 
 const TEAM_COLORS = [0xd62839, 0xf2c230];
 const FOV = 45;
-/** Player figures (procedural) – off until real animated models replace them. */
-const SHOW_FIGURES = false;
 const UP = new THREE.Vector3(0, 1, 0);
 
 /** Sheet (x, y) → three.js world: X = x, Y = up, Z = -y. */
@@ -67,8 +64,6 @@ export class View3D implements GameView {
   private sun!: THREE.DirectionalLight;
   /** Shadows and spectators are switched off when the device cannot keep up. */
   private detailOn = true;
-  private crew?: Crew;
-  private brushPose: BrushPose[] = [];
   /** The camera currently looks straight down at the house. */
   private topView = true;
   /** `?quality=high` keeps all detail regardless of the frame rate (for screenshots / strong devices). */
@@ -144,8 +139,6 @@ export class View3D implements GameView {
     buildArena(this.scene);
     this.granite.map = graniteMap();
     this.granite.color.setHex(0xffffff);
-    // procedural figures are switched off until real, animated models are available
-    if (SHOW_FIGURES) this.crew = new Crew(this.scene);
     this.buildSheet();
     this.buildStoneGeometry();
     this.buildMarkers();
@@ -326,7 +319,6 @@ export class View3D implements GameView {
         new THREE.MeshStandardMaterial({ color: k > 1 ? 0x7a1f6b : 0x12354d }),
       );
       pad.position.y = 0.02;
-      // the stick is drawn by the figures (from the head through the sweeper's hands)
       g.add(pad);
       this.scene.add(g);
       this.brushes.push(g);
@@ -551,7 +543,6 @@ export class View3D implements GameView {
 
     this.updateSparks(dt);
     this.drawSweepers(game);
-    this.crew?.update(game, dt, this.brushPose, this.topView, this.camPos);
     this.drawResult(game);
     this.drawDebug(game, dt);
 
@@ -612,8 +603,6 @@ export class View3D implements GameView {
     this.brushes.forEach((g, k) => {
       const sw = game.viewWorld.sweepers.state[k];
       g.visible = show && sw.down; // only the brush heads, and only while they are on the ice
-      const bp = (this.brushPose[k] ??= { x: 0, y: 0, fx: 0, fy: 1, visible: false, down: false, effective: 0 });
-      bp.visible = g.visible;
       if (!g.visible || !s) return;
       const fx = s.vx / speed;
       const fy = s.vy / speed;
@@ -632,18 +621,12 @@ export class View3D implements GameView {
       }
       g.position.set(x, sw.down ? 0 : 0.12, -y);
       g.rotation.y = Math.atan2(fx, fy) + Math.PI;
-      bp.x = x;
-      bp.y = y;
-      bp.fx = fx;
-      bp.fy = fy;
-      bp.down = sw.down;
-      bp.effective = sw.effective;
     });
   }
 
   /** End result: rings around the counting stones, measuring lines and distance labels. */
   private drawResult(game: Game): void {
-    const between = game.phase === 'aim' || game.phase === 'aiThink' || game.phase === 'settled';
+    const between = game.phase === 'aim' || game.phase === 'aiThink' || game.phase === 'skipThink' || game.phase === 'settled';
     const r = game.phase === 'endScore' ? game.endResult : between && !game.lsd && !game.drill ? scoreEnd(game.viewWorld.stones, game.dir) : null;
     const showMeasure = game.phase === 'endScore';
     const find = (id: number): Stone | undefined => game.viewWorld.stones.find((q) => q.id === id);

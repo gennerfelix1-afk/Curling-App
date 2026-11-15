@@ -34,20 +34,14 @@
     <div id="hud-call"></div>
     <div id="message"></div>
     <div id="score-pop"></div>
+    <div id="delivery-pop"></div>
     <div id="rate-pop"><div class="stars"></div><div class="label"></div></div>
 
     <div class="panel" id="panel-aim">
-      <div class="group">
-        <button id="btn-turn-ccw" title="Out-Turn (Q)">↺ Out-Turn</button>
-        <button id="btn-turn-cw" title="In-Turn (E)">In-Turn ↻</button>
-      </div>
-      <div class="group">
-        <button id="btn-weight-down" title="leichter (S)">−</button>
-        <span id="weight-label"></span>
-        <button id="btn-weight-up" title="schwerer (W)">+</button>
-      </div>
+      <div id="call-title">Der Skip sagt an</div>
+      <div id="call-text"></div>
+      <div id="call-sub"></div>
       <button id="btn-go">Abgabe</button>
-      <div class="hint">Ziehen = Besen verschieben · Tippen = Besen setzen</div>
     </div>
 
     <div class="panel" id="panel-meter">
@@ -71,9 +65,8 @@
     </div>
 
     <div class="panel" id="panel-sweep">
-      <div id="scrub-hint"></div>
-      <div id="scrub-bar"><div id="scrub-fill"></div></div>
-      <div id="fatigue-row"><span>Kraft der Wischer</span><div id="fatigue"><div id="fatigue-fill"></div></div></div>
+      <button class="pad" id="pad-sweep-0"><span>Wischen</span><div class="fatigue"><i id="fatigue-0"></i></div></button>
+      <button class="pad" id="pad-sweep-1"><span>Wischen</span><div class="fatigue"><i id="fatigue-1"></i></div></button>
     </div>
     <button id="pad-skip"></button>
 
