@@ -201,15 +201,15 @@ export const EXECUTION = {
   /** Relative speed error at full meter deviation, per difficulty. */
   weightError: { beginner: 0.02, club: 0.035, pro: 0.05 },
   /** Lateral aim error at the broom at full meter deviation [m], per difficulty. */
-  lineError: { beginner: 0.2, club: 0.35, pro: 0.5 },
+  lineError: { beginner: 0.3, club: 0.45, pro: 0.6 },
   /** Duration of the slide from the hack to the release point [s]. */
   slideTime: 2.2,
   /** Push delivery: seconds of holding to go from the lightest to the heaviest weight. */
-  chargeTime: { beginner: 3.6, club: 3.0, pro: 2.5 },
+  chargeTime: { beginner: 2.7, club: 2.3, pro: 1.9 },
   /** Push delivery: seconds the stone glides from the hack to the near hog line. */
   glideTime: 3.0,
   /** Push delivery: how far the slide wanders off the line without steering (share of lineError). */
-  wander: { beginner: 0.6, club: 0.85, pro: 1.0 },
+  wander: { beginner: 0.9, club: 1.0, pro: 1.1 },
   /** Gesture delivery: ideal duration of the swipe from the hack to the release point [s]. */
   gestureTime: 1.3,
   /** Gesture delivery: relative pace error that counts as full weight deviation. */
@@ -218,6 +218,15 @@ export const EXECUTION = {
   gestureLineRange: 0.25,
   /** Gesture delivery: swipes shorter than this share of the slide are cancelled. */
   gestureMin: 0.3,
+} as const;
+
+/**
+ * Grades of a delivery (feedback for the player): limits for perfect / great / good.
+ * Weight: relative deviation from the called release speed; line: metres off the broom.
+ */
+export const GRADES = {
+  weight: [0.004, 0.009, 0.018],
+  line: [0.04, 0.1, 0.2],
 } as const;
 
 export type Difficulty = keyof typeof EXECUTION.weightError;

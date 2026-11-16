@@ -31,9 +31,9 @@ interface Tip {
 const TIPS: Tip[] = [
   {
     id: 'aim',
-    title: 'Zielen',
-    text: 'Ziehe seitlich über das Eis, um den Zielpunkt (grüner Ring) zu verschieben, oder tippe, um ihn zu setzen – dorthin zielt der Stein. Wähle die Drehung (In-Turn oder Out-Turn bestimmt, in welche Richtung der Stein am Ende curlt) und sage ein Gewicht an. Die gestrichelte Linie zeigt den Weg ohne Wischen.',
-    when: (g) => g.phase === 'aim' && !g.isAI(g.team),
+    title: 'Dein Skip sagt an',
+    text: 'Dein Skip sagt jeden Wurf an: Ziel (grüner Ring), Drehung und Gewicht. Du führst die Abgabe aus – je genauer du Gewicht und Linie triffst, desto besser gelingt der Wurf. Danach siehst du sofort, wie gut du warst.',
+    when: (g) => g.phase === 'aim' && !g.isAI(g.team) && g.skipCall !== null,
   },
   {
     id: 'push',
@@ -44,7 +44,7 @@ const TIPS: Tip[] = [
   {
     id: 'sweep',
     title: 'Wischen',
-    text: 'Halte einen Finger auf den Bildschirm, um zu wischen. Wischen trägt den Stein weiter und hält ihn gerader. Der Skip ruft dir zu: HARD! = wischen, Off! = loslassen.',
+    text: 'Unten sind zwei Wisch-Knöpfe, einer für jeden Wischer. Halten = wischen: Der Stein läuft weiter und gerader. Beide Knöpfe zusammen wirken am stärksten. Wenn die Knöpfe grün leuchten, ruft der Skip nach Wischen.',
     when: (g) => g.phase === 'running' && !g.isAI(g.team) && g.options.sweepMode === 'manual' && g.speed > 0.5,
   },
   {
@@ -56,9 +56,9 @@ const TIPS: Tip[] = [
 ];
 
 const EN_TIPS: Record<string, { title: string; text: string }> = {
-  aim: { title: 'Aiming', text: 'Drag sideways across the ice to move the target (green ring), or tap to place it – that is where the stone is aimed. Choose the turn (in-turn or out-turn decides which way the stone curls at the end) and call a weight. The dashed line shows the path without sweeping.' },
+  aim: { title: 'Your skip calls the shot', text: 'Your skip calls every shot: target (green ring), turn and weight. You deliver the stone – the closer you get to the called weight and line, the better the shot. Right afterwards you see how well you did.' },
   push: { title: 'Delivery', text: 'Put a finger on the ice and hold: the scale fills up and shows the weight. At the weight you want, swipe up – the stone pushes off. Then drag sideways to keep it on the line and let go before the red line.' },
-  sweep: { title: 'Sweeping', text: 'Hold a finger on the screen to sweep. Sweeping carries the stone further and keeps it straighter. The skip calls: HARD! = sweep, Off! = let go.' },
+  sweep: { title: 'Sweeping', text: 'There are two sweep buttons at the bottom, one for each sweeper. Hold = sweep: the stone travels further and straighter. Both buttons together work best. When the buttons glow green, the skip is calling for sweeping.' },
   score: { title: 'Scoring', text: 'Only stones in the house count. The team with the stone closest to the centre gets one point for each stone closer than the opponent’s best. The scoring team gives up the last stone (hammer) in the next end.' },
 };
 

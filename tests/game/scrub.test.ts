@@ -37,7 +37,7 @@ describe('sweeping by rubbing the ice', () => {
     expect(g.sweepIntensity(0)).toBe(0);
     // keys still work and combine with rubbing
     g.sweepDown(0);
-    expect(g.sweepIntensity(0)).toBeCloseTo(0.8, 5);
+    expect(g.sweepIntensity(0)).toBe(1);
     expect(g.sweepIntensity(1)).toBe(0);
   });
 

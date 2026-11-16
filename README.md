@@ -48,13 +48,11 @@ Wisch-Effekt usw. noch in den Zielbereichen liegen) → mit `npx vite-node scrip
 
 ## Steuerung
 
-Ablauf pro Stein: **Besen setzen → Drehung → Gewicht → Abgabe → Wischen**.
+Ablauf pro Stein: **Der Skip sagt den Wurf an → Abgabe → Wischen**. Zielen, Drehung und Gewicht wählt der Skip;
+du führst die Abgabe aus und wirst dafür bewertet.
 
 | Aktion | Maus / Tastatur | Touch |
 |---|---|---|
-| Besen (Zielpunkt) setzen | seitlich ziehen = verschieben, klicken = setzen | seitlich ziehen = verschieben, tippen = setzen |
-| Drehung: Out-Turn ↺ / In-Turn ↻ | `Q` / `E` oder `←` / `→` | Buttons |
-| Gewicht leichter / schwerer | `S` / `W` oder `↓` / `↑` | `−` / `+` |
 | **Abgabe** (Standard): Gewicht aufbauen | `Leertaste` gedrückt halten | „Abgabe“ tippen, dann Finger aufs Eis legen und halten |
 | Abstoßen | `Leertaste` loslassen | Finger nach oben wischen (nicht abheben) |
 | Linie halten beim Gleiten | `←` / `→` | Finger seitlich ziehen |
@@ -62,7 +60,7 @@ Ablauf pro Stein: **Besen setzen → Drehung → Gewicht → Abgabe → Wischen*
 | Alternative Abgabe „Timing-Anzeigen“ (im Menü) | `Leertaste` / `Enter` (3×) | „Abgabe“, dann 2× auf die Anzeige tippen |
 | Abgabe per Wisch-Geste (im Menü wählbar, Standard auf Touch-Geräten) | „Abgabe“, dann mit der Maus nach oben ziehen und loslassen | „Abgabe“, dann nach oben wischen und loslassen |
 | Abbrechen (vor dem Abstoß) | `Esc` | „Abbrechen“ |
-| Wischen | `A` / `D` halten oder Maustaste gedrückt halten | Finger auf dem Bildschirm halten |
+| Wischen | `A` / `D` halten (linker / rechter Wischer) | linken / rechten Wisch-Knopf halten; beide zusammen = am stärksten |
 | Skip des anderen Teams wischt (ab Tee Line) | `L` halten | Button „Skip … wischt“ |
 | Ansage an die Mitspieler (Wisch-Modus „auf Ansage“): HARD / Clean / Off | `H` / `J` / `K` | Buttons |
 | Kamera: Auto → Draufsicht → Übersicht | `C` | Button „Kamera“ |
@@ -80,8 +78,10 @@ Ablauf pro Stein: **Besen setzen → Drehung → Gewicht → Abgabe → Wischen*
   Wer an der roten Hog Line noch nicht losgelassen hat, verliert den Stein (Hog-Line-Verletzung).
 - **Timing-Anzeigen:** Die beiden Anzeigen bei der Abgabe bestimmen den Ausführungsfehler: je näher an der Mitte gestoppt, desto genauer
   stimmen Gewicht und Linie.
-- **Wischen:** Finger auf dem Bildschirm halten = beide Wischer wischen hart, loslassen = aufhören. Hartes
-  Dauerwischen ermüdet (Balken „Kraft der Wischer“).
+- **Wischen:** Zwei Knöpfe, einer pro Wischer. Halten = wischen. Leuchten die Knöpfe grün, ruft der Skip nach Wischen.
+- **Abgabe-Bewertung:** Direkt nach dem Loslassen siehst du, wie gut du das angesagte Gewicht und die Linie getroffen
+  hast (PERFEKT / STARK / GUT / DANEBEN, mit Abweichung in % bzw. cm) und deine Serie guter Abgaben. Die Grenzen
+  stehen in `GRADES` in `src/physics/config.ts`.
 - **Rückmeldung:** Nach jedem Wurf eine Bewertung mit 0–3 Sternen (wie stark der Wurf die Lage verbessert hat), die
   oben rechts angezeigte Zählung („Rot liegt 2“), farbige Ringe um die zählenden Steine und eine Leuchtspur hinter dem
   Stein.
